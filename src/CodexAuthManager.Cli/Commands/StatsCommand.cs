@@ -212,6 +212,7 @@ This will guide you through entering the values from [yellow]codex --yolo[/]."))
         table.Border(TableBorder.Rounded);
         table.AddColumn(new TableColumn("[bold]ID[/]").RightAligned());
         table.AddColumn("[bold]Email[/]");
+        table.AddColumn("[bold]Plan[/]");
         table.AddColumn(new TableColumn("[bold]5h Limit[/]").RightAligned());
         table.AddColumn(new TableColumn("[bold]7d Limit[/]").RightAligned());
         table.AddColumn("[bold]5h Reset[/]");
@@ -228,6 +229,7 @@ This will guide you through entering the values from [yellow]codex --yolo[/]."))
                 table.AddRow(
                     identity.Id.ToString(),
                     identity.Email,
+                    identity.PlanType,
                     "[dim]N/A[/]",
                     "[dim]N/A[/]",
                     "[dim]N/A[/]",
@@ -246,6 +248,7 @@ This will guide you through entering the values from [yellow]codex --yolo[/]."))
                 table.AddRow(
                     identity.Id.ToString(),
                     identity.Email,
+                    identity.PlanType,
                     $"[{fiveHourColor}]{stats.FiveHourLimitPercent}%[/]",
                     $"[{weeklyColor}]{stats.WeeklyLimitPercent}%[/]",
                     fiveHourReset,
