@@ -1,9 +1,11 @@
 using CodexAuthManager.Cli.Commands;
 using CodexAuthManager.Tests.TestHelpers;
+using Spectre.Console.Cli;
 using Xunit;
 
 namespace CodexAuthManager.Tests.Commands;
 
+[Collection("CommandTests")]
 public class ImportCommandTests : IDisposable
 {
     private readonly TestFixture _fixture;
@@ -31,8 +33,11 @@ public class ImportCommandTests : IDisposable
         authToken2.Tokens.IdToken = SampleData.CreateSampleIdToken("user2@example.com");
         _fixture.AuthJsonService.WriteAuthToken($"{codexFolder}/2-auth.json", authToken2);
 
+        var settings = new ImportSettings();
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "import", null);
+
         // Act
-        var result = await _command.ExecuteAsync();
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(0, result);
@@ -44,8 +49,11 @@ public class ImportCommandTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_ShouldReturnZero_WhenNoFilesFound()
     {
+        var settings = new ImportSettings();
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "import", null);
+
         // Act
-        var result = await _command.ExecuteAsync();
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(0, result);
@@ -59,8 +67,11 @@ public class ImportCommandTests : IDisposable
         var authToken = SampleData.CreateAuthToken();
         _fixture.AuthJsonService.WriteAuthToken($"{codexFolder}/auth.json", authToken);
 
+        var settings = new ImportSettings();
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "import", null);
+
         // Act
-        await _command.ExecuteAsync();
+        await _command.ExecuteAsync(context, settings);
 
         // Assert
         var identities = (await _fixture.IdentityRepository.GetAllAsync()).ToList();
@@ -80,8 +91,11 @@ public class ImportCommandTests : IDisposable
         var validToken = SampleData.CreateAuthToken();
         _fixture.AuthJsonService.WriteAuthToken($"{codexFolder}/valid-auth.json", validToken);
 
+        var settings = new ImportSettings();
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "import", null);
+
         // Act
-        var result = await _command.ExecuteAsync();
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(0, result);

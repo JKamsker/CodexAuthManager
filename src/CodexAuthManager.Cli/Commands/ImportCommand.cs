@@ -1,11 +1,21 @@
 using CodexAuthManager.Core.Services;
+using Spectre.Console;
+using Spectre.Console.Cli;
+using System.ComponentModel;
 
 namespace CodexAuthManager.Cli.Commands;
+
+public class ImportSettings : CommandSettings
+{
+    [Description("Folder path to scan (defaults to Codex folder)")]
+    [CommandOption("-f|--folder")]
+    public string? FolderPath { get; set; }
+}
 
 /// <summary>
 /// Handles the import command - scans and imports auth.json files
 /// </summary>
-public class ImportCommand
+public class ImportCommand : AsyncCommand<ImportSettings>
 {
     private readonly AuthJsonService _authJsonService;
     private readonly TokenManagementService _tokenManagement;
@@ -21,24 +31,25 @@ public class ImportCommand
         _backupService = backupService;
     }
 
-    public async Task<int> ExecuteAsync(string? folderPath = null)
+    public override async Task<int> ExecuteAsync(CommandContext context, ImportSettings settings)
     {
-        Console.WriteLine("Scanning for auth.json files...");
+        AnsiConsole.MarkupLine("[bold cyan]Scanning for auth.json files...[/]");
 
         var authFiles = _authJsonService.ScanForAuthFiles().ToList();
         if (!authFiles.Any())
         {
-            Console.WriteLine("No auth.json files found.");
+            AnsiConsole.MarkupLine("[yellow]No auth.json files found.[/]");
             return 0;
         }
 
-        Console.WriteLine($"Found {authFiles.Count} auth file(s):");
+        AnsiConsole.MarkupLine($"[green]Found {authFiles.Count} auth file(s):[/]");
         foreach (var file in authFiles)
         {
-            Console.WriteLine($"  - {Path.GetFileName(file)}");
+            AnsiConsole.MarkupLine($"  [dim]•[/] {Path.GetFileName(file)}");
         }
+        AnsiConsole.WriteLine();
 
-        Console.WriteLine("\nCreating backup before import...");
+        AnsiConsole.MarkupLine("[dim]Creating backup before import...[/]");
         try
         {
             await _backupService.CreateBackupAsync();
@@ -52,32 +63,48 @@ public class ImportCommand
         int updated = 0;
         int skipped = 0;
 
-        foreach (var file in authFiles)
-        {
-            try
+        await AnsiConsole.Status()
+            .StartAsync("Importing...", async ctx =>
             {
-                var authToken = _authJsonService.ReadAuthToken(file);
-                var (identityId, versionId, isNew) = await _tokenManagement.ImportOrUpdateTokenAsync(authToken);
-
-                if (isNew)
+                foreach (var file in authFiles)
                 {
-                    imported++;
-                    Console.WriteLine($"✓ Imported new identity from {Path.GetFileName(file)}");
-                }
-                else
-                {
-                    updated++;
-                    Console.WriteLine($"✓ Updated identity from {Path.GetFileName(file)}");
-                }
-            }
-            catch (Exception ex)
-            {
-                skipped++;
-                Console.WriteLine($"✗ Failed to import {Path.GetFileName(file)}: {ex.Message}");
-            }
-        }
+                    ctx.Status($"Processing {Path.GetFileName(file)}...");
+                    try
+                    {
+                        var authToken = _authJsonService.ReadAuthToken(file);
+                        var (identityId, versionId, isNew) = await _tokenManagement.ImportOrUpdateTokenAsync(authToken);
 
-        Console.WriteLine($"\nImport complete: {imported} new, {updated} updated, {skipped} skipped");
+                        if (isNew)
+                        {
+                            imported++;
+                            AnsiConsole.MarkupLine($"[green]✓[/] Imported new identity from {Path.GetFileName(file)}");
+                        }
+                        else
+                        {
+                            updated++;
+                            AnsiConsole.MarkupLine($"[blue]✓[/] Updated identity from {Path.GetFileName(file)}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        skipped++;
+                        AnsiConsole.MarkupLine($"[red]✗[/] Failed to import {Path.GetFileName(file)}: [dim]{ex.Message}[/]");
+                    }
+                }
+            });
+
+        AnsiConsole.WriteLine();
+        var table = new Table();
+        table.Border(TableBorder.Rounded);
+        table.AddColumn("Status");
+        table.AddColumn(new TableColumn("Count").RightAligned());
+
+        table.AddRow("[green]New[/]", $"[green]{imported}[/]");
+        table.AddRow("[blue]Updated[/]", $"[blue]{updated}[/]");
+        table.AddRow("[red]Skipped[/]", $"[red]{skipped}[/]");
+
+        AnsiConsole.Write(table);
+
         return 0;
     }
 }

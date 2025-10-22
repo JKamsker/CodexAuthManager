@@ -1,9 +1,11 @@
 using CodexAuthManager.Cli.Commands;
 using CodexAuthManager.Tests.TestHelpers;
+using Spectre.Console.Cli;
 using Xunit;
 
 namespace CodexAuthManager.Tests.Commands;
 
+[Collection("CommandTests")]
 public class RollbackCommandTests : IDisposable
 {
     private readonly TestFixture _fixture;
@@ -45,9 +47,15 @@ public class RollbackCommandTests : IDisposable
     {
         // Arrange
         var identityId = await CreateIdentityWithMultipleVersionsAsync("test@example.com");
+        var settings = new RollbackSettings
+        {
+            Identifier = identityId.ToString(),
+            Version = 1
+        };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "rollback", null);
 
         // Act
-        var result = await _command.ExecuteAsync(identityId.ToString(), versionNumber: 1);
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(0, result);
@@ -63,9 +71,15 @@ public class RollbackCommandTests : IDisposable
     {
         // Arrange
         var identityId = await CreateIdentityWithMultipleVersionsAsync("test@example.com");
+        var settings = new RollbackSettings
+        {
+            Identifier = identityId.ToString(),
+            Version = null
+        };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "rollback", null);
 
         // Act
-        var result = await _command.ExecuteAsync(identityId.ToString(), versionNumber: null);
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(0, result);
@@ -83,8 +97,15 @@ public class RollbackCommandTests : IDisposable
         var identityId = await CreateIdentityWithMultipleVersionsAsync("active@example.com");
         await _fixture.IdentityRepository.SetActiveAsync(identityId);
 
+        var settings = new RollbackSettings
+        {
+            Identifier = null,
+            Version = 1
+        };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "rollback", null);
+
         // Act
-        var result = await _command.ExecuteAsync(identifier: null, versionNumber: 1);
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(0, result);
@@ -101,8 +122,15 @@ public class RollbackCommandTests : IDisposable
         var identityId = await CreateIdentityWithMultipleVersionsAsync("active@example.com");
         await _fixture.IdentityRepository.SetActiveAsync(identityId);
 
+        var settings = new RollbackSettings
+        {
+            Identifier = null,
+            Version = 1
+        };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "rollback", null);
+
         // Act
-        await _command.ExecuteAsync(identifier: null, versionNumber: 1);
+        await _command.ExecuteAsync(context, settings);
 
         // Assert
         var authToken = _fixture.AuthJsonService.ReadActiveAuthToken();
@@ -113,8 +141,15 @@ public class RollbackCommandTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_ShouldReturnError_WhenNoActiveIdentity()
     {
+        var settings = new RollbackSettings
+        {
+            Identifier = null,
+            Version = 1
+        };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "rollback", null);
+
         // Act
-        var result = await _command.ExecuteAsync(identifier: null, versionNumber: 1);
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(1, result);
@@ -123,8 +158,15 @@ public class RollbackCommandTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_ShouldReturnError_WhenIdentityNotFound()
     {
+        var settings = new RollbackSettings
+        {
+            Identifier = "nonexistent@example.com",
+            Version = 1
+        };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "rollback", null);
+
         // Act
-        var result = await _command.ExecuteAsync("nonexistent@example.com", versionNumber: 1);
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(1, result);
@@ -136,8 +178,15 @@ public class RollbackCommandTests : IDisposable
         // Arrange
         var identityId = await CreateIdentityWithMultipleVersionsAsync("test@example.com");
 
+        var settings = new RollbackSettings
+        {
+            Identifier = identityId.ToString(),
+            Version = 999
+        };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "rollback", null);
+
         // Act
-        var result = await _command.ExecuteAsync(identityId.ToString(), versionNumber: 999);
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(1, result);
@@ -150,8 +199,15 @@ public class RollbackCommandTests : IDisposable
         var authToken = SampleData.CreateAuthToken();
         var (identityId, _, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(authToken);
 
+        var settings = new RollbackSettings
+        {
+            Identifier = identityId.ToString(),
+            Version = null
+        };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "rollback", null);
+
         // Act
-        var result = await _command.ExecuteAsync(identityId.ToString(), versionNumber: null);
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(1, result);

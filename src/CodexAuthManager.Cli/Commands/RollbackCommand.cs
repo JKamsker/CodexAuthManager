@@ -1,12 +1,26 @@
 using CodexAuthManager.Core.Data;
 using CodexAuthManager.Core.Services;
+using Spectre.Console;
+using Spectre.Console.Cli;
+using System.ComponentModel;
 
 namespace CodexAuthManager.Cli.Commands;
+
+public class RollbackSettings : CommandSettings
+{
+    [Description("Identity ID, email, or leave empty for active identity")]
+    [CommandArgument(0, "[identifier]")]
+    public string? Identifier { get; set; }
+
+    [Description("Version number to rollback to (defaults to previous version)")]
+    [CommandOption("-v|--version")]
+    public int? Version { get; set; }
+}
 
 /// <summary>
 /// Handles the rollback command - restores a previous token version
 /// </summary>
-public class RollbackCommand
+public class RollbackCommand : AsyncCommand<RollbackSettings>
 {
     private readonly IIdentityRepository _identityRepository;
     private readonly ITokenVersionRepository _tokenVersionRepository;
@@ -28,32 +42,32 @@ public class RollbackCommand
         _backupService = backupService;
     }
 
-    public async Task<int> ExecuteAsync(string? identifier = null, int? versionNumber = null)
+    public override async Task<int> ExecuteAsync(CommandContext context, RollbackSettings settings)
     {
         // Get identity
         Core.Models.Identity? identity = null;
 
-        if (string.IsNullOrEmpty(identifier))
+        if (string.IsNullOrEmpty(settings.Identifier))
         {
             identity = await _identityRepository.GetActiveIdentityAsync();
             if (identity == null)
             {
-                Console.WriteLine("No active identity found. Please specify an ID or email.");
+                AnsiConsole.MarkupLine("[red]No active identity found. Please specify an ID or email.[/]");
                 return 1;
             }
         }
-        else if (int.TryParse(identifier, out int id))
+        else if (int.TryParse(settings.Identifier, out int id))
         {
             identity = await _identityRepository.GetByIdAsync(id);
         }
         else
         {
-            identity = await _identityRepository.GetByEmailAsync(identifier);
+            identity = await _identityRepository.GetByEmailAsync(settings.Identifier);
         }
 
         if (identity == null)
         {
-            Console.WriteLine($"Identity not found: {identifier}");
+            AnsiConsole.MarkupLine($"[red]Identity not found:[/] {settings.Identifier}");
             return 1;
         }
 
@@ -61,19 +75,19 @@ public class RollbackCommand
         var versions = (await _tokenVersionRepository.GetVersionsAsync(identity.Id)).ToList();
         if (versions.Count < 2)
         {
-            Console.WriteLine("Cannot rollback: only one version exists.");
+            AnsiConsole.MarkupLine("[yellow]Cannot rollback: only one version exists.[/]");
             return 1;
         }
 
         // Determine which version to rollback to
         Core.Models.TokenVersion? targetVersion = null;
 
-        if (versionNumber.HasValue)
+        if (settings.Version.HasValue)
         {
-            targetVersion = versions.FirstOrDefault(v => v.VersionNumber == versionNumber.Value);
+            targetVersion = versions.FirstOrDefault(v => v.VersionNumber == settings.Version.Value);
             if (targetVersion == null)
             {
-                Console.WriteLine($"Version {versionNumber.Value} not found.");
+                AnsiConsole.MarkupLine($"[red]Version {settings.Version.Value} not found.[/]");
                 return 1;
             }
         }
@@ -83,33 +97,48 @@ public class RollbackCommand
             var sortedVersions = versions.OrderByDescending(v => v.VersionNumber).ToList();
             if (sortedVersions.Count < 2)
             {
-                Console.WriteLine("Cannot rollback: no previous version available.");
+                AnsiConsole.MarkupLine("[yellow]Cannot rollback: no previous version available.[/]");
                 return 1;
             }
             targetVersion = sortedVersions[1];
         }
 
-        Console.WriteLine($"Rolling back identity '{identity.Email}' to version {targetVersion.VersionNumber}...");
+        int newVersionNumber = 0;
 
-        // Create backup
-        await _backupService.CreateBackupAsync();
-
-        // Perform rollback
-        var newVersionId = await _tokenManagement.RollbackToVersionAsync(identity.Id, targetVersion.Id);
-
-        // If this is the active identity, update auth.json
-        if (identity.IsActive)
-        {
-            var token = await _tokenManagement.GetCurrentTokenAsync(identity.Id);
-            if (token != null)
+        await AnsiConsole.Status()
+            .StartAsync($"Rolling back identity '[bold]{identity.Email}[/]' to version {targetVersion.VersionNumber}...", async ctx =>
             {
-                _authJsonService.WriteActiveAuthToken(token);
-                Console.WriteLine("✓ auth.json has been updated");
-            }
-        }
+                // Create backup
+                ctx.Status("Creating backup...");
+                await _backupService.CreateBackupAsync();
 
-        Console.WriteLine($"✓ Rolled back to version {targetVersion.VersionNumber}");
-        Console.WriteLine($"  (Created new version based on v{targetVersion.VersionNumber})");
+                // Perform rollback
+                ctx.Status("Creating new version...");
+                var newVersionId = await _tokenManagement.RollbackToVersionAsync(identity.Id, targetVersion.Id);
+                var newVersion = await _tokenVersionRepository.GetByIdAsync(newVersionId);
+                newVersionNumber = newVersion!.VersionNumber;
+
+                // If this is the active identity, update auth.json
+                if (identity.IsActive)
+                {
+                    ctx.Status("Updating auth.json...");
+                    var token = await _tokenManagement.GetCurrentTokenAsync(identity.Id);
+                    if (token != null)
+                    {
+                        _authJsonService.WriteActiveAuthToken(token);
+                    }
+                }
+            });
+
+        var panel = new Panel(new Markup($@"[green]✓[/] Rolled back to version {targetVersion.VersionNumber}
+[dim]Created new version v{newVersionNumber} based on v{targetVersion.VersionNumber}[/]
+{(identity.IsActive ? "[dim]auth.json has been updated[/]" : "")}"))
+        {
+            Border = BoxBorder.Rounded,
+            BorderStyle = new Style(Color.Green)
+        };
+
+        AnsiConsole.Write(panel);
 
         return 0;
     }

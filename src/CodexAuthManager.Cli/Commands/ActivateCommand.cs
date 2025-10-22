@@ -1,12 +1,22 @@
 using CodexAuthManager.Core.Data;
 using CodexAuthManager.Core.Services;
+using Spectre.Console;
+using Spectre.Console.Cli;
+using System.ComponentModel;
 
 namespace CodexAuthManager.Cli.Commands;
+
+public class ActivateSettings : CommandSettings
+{
+    [Description("Identity ID or email to activate")]
+    [CommandArgument(0, "<identifier>")]
+    public string Identifier { get; set; } = string.Empty;
+}
 
 /// <summary>
 /// Handles the activate command - switches the active identity
 /// </summary>
-public class ActivateCommand
+public class ActivateCommand : AsyncCommand<ActivateSettings>
 {
     private readonly IIdentityRepository _identityRepository;
     private readonly TokenManagementService _tokenManagement;
@@ -25,46 +35,58 @@ public class ActivateCommand
         _backupService = backupService;
     }
 
-    public async Task<int> ExecuteAsync(string identifier)
+    public override async Task<int> ExecuteAsync(CommandContext context, ActivateSettings settings)
     {
         // Find identity by ID or email
         Core.Models.Identity? identity = null;
 
-        if (int.TryParse(identifier, out int id))
+        if (int.TryParse(settings.Identifier, out int id))
         {
             identity = await _identityRepository.GetByIdAsync(id);
         }
         else
         {
-            identity = await _identityRepository.GetByEmailAsync(identifier);
+            identity = await _identityRepository.GetByEmailAsync(settings.Identifier);
         }
 
         if (identity == null)
         {
-            Console.WriteLine($"Identity not found: {identifier}");
+            AnsiConsole.MarkupLine($"[red]Identity not found:[/] {settings.Identifier}");
             return 1;
         }
 
-        Console.WriteLine($"Activating identity: {identity.Email}...");
-
-        // Create backup
-        await _backupService.CreateBackupAsync();
-
-        // Set as active in database
-        await _identityRepository.SetActiveAsync(identity.Id);
-
-        // Get current token and write to auth.json
+        // Check if token version exists before activating
         var token = await _tokenManagement.GetCurrentTokenAsync(identity.Id);
         if (token == null)
         {
-            Console.WriteLine("Error: No token version found for this identity");
+            AnsiConsole.MarkupLine($"[red]No token version found for this identity:[/] {identity.Email}");
             return 1;
         }
 
-        _authJsonService.WriteActiveAuthToken(token);
+        await AnsiConsole.Status()
+            .StartAsync($"Activating identity: [bold]{identity.Email}[/]...", async ctx =>
+            {
+                // Create backup
+                ctx.Status("Creating backup...");
+                await _backupService.CreateBackupAsync();
 
-        Console.WriteLine($"✓ Identity activated: {identity.Email}");
-        Console.WriteLine($"  auth.json has been updated with the current token");
+                // Set as active in database
+                ctx.Status("Updating database...");
+                await _identityRepository.SetActiveAsync(identity.Id);
+
+                // Write to auth.json
+                ctx.Status("Writing auth.json...");
+                _authJsonService.WriteActiveAuthToken(token);
+            });
+
+        var panel = new Panel(new Markup($@"[green]✓[/] Identity activated: [bold]{identity.Email}[/]
+[dim]auth.json has been updated with the current token[/]"))
+        {
+            Border = BoxBorder.Rounded,
+            BorderStyle = new Style(Color.Green)
+        };
+
+        AnsiConsole.Write(panel);
 
         return 0;
     }

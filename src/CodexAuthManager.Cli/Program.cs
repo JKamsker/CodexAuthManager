@@ -1,9 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
+using Spectre.Console;
+using Spectre.Console.Cli;
 using CodexAuthManager.Core.Abstractions;
 using CodexAuthManager.Core.Data;
 using CodexAuthManager.Core.Infrastructure;
 using CodexAuthManager.Core.Services;
 using CodexAuthManager.Cli.Commands;
+using CodexAuthManager.Cli.Infrastructure;
 
 namespace CodexAuthManager.Cli;
 
@@ -15,142 +18,67 @@ class Program
         bool isDevelopment = args.Contains("--dev") ||
                             Environment.GetEnvironmentVariable("CODEX_ENV") == "development";
 
-        // Remove --dev from args if present
-        args = args.Where(a => a != "--dev").ToArray();
-
         // Setup dependency injection
         var services = new ServiceCollection();
         ConfigureServices(services, isDevelopment);
-        var serviceProvider = services.BuildServiceProvider();
 
-        // Initialize database
-        var database = serviceProvider.GetRequiredService<TokenDatabase>();
-        await database.InitializeAsync();
+        // Create Spectre type registrar
+        var registrar = new TypeRegistrar(services);
 
-        if (args.Length == 0)
+        // Create command app
+        var app = new CommandApp(registrar);
+        app.Configure(config =>
         {
-            ShowHelp();
-            return 0;
-        }
+            config.SetApplicationName("codex-tokens");
 
-        var command = args[0].ToLower();
-        var commandArgs = args.Skip(1).ToArray();
+            config.AddCommand<ImportCommand>("import")
+                .WithDescription("Scan and import *auth.json files from the Codex folder")
+                .WithExample(new[] { "import" });
 
+            config.AddCommand<ListCommand>("list")
+                .WithDescription("List all stored identities/tokens")
+                .WithExample(new[] { "list" });
+
+            config.AddCommand<ShowCommand>("show")
+                .WithDescription("Show identity details (current one by default)")
+                .WithExample(new[] { "show" })
+                .WithExample(new[] { "show", "2" })
+                .WithExample(new[] { "show", "user@example.com" });
+
+            config.AddCommand<ActivateCommand>("activate")
+                .WithDescription("Mark an identity as active and update auth.json")
+                .WithExample(new[] { "activate", "2" })
+                .WithExample(new[] { "activate", "user@example.com" });
+
+            config.AddCommand<RemoveCommand>("remove")
+                .WithDescription("Delete one or more identities")
+                .WithExample(new[] { "remove", "2" })
+                .WithExample(new[] { "remove", "user@example.com" })
+                .WithExample(new[] { "remove", "1", "2", "3" });
+
+            config.AddCommand<RollbackCommand>("rollback")
+                .WithDescription("Restore a previous version of an identity")
+                .WithExample(new[] { "rollback" })
+                .WithExample(new[] { "rollback", "2" })
+                .WithExample(new[] { "rollback", "user@example.com", "--version", "3" });
+
+            config.ValidateExamples();
+        });
+
+        // Initialize database before running commands
         try
         {
-            return command switch
-            {
-                "import" => await ExecuteImportAsync(serviceProvider),
-                "list" => await ExecuteListAsync(serviceProvider),
-                "show" => await ExecuteShowAsync(serviceProvider, commandArgs),
-                "activate" => await ExecuteActivateAsync(serviceProvider, commandArgs),
-                "remove" => await ExecuteRemoveAsync(serviceProvider, commandArgs),
-                "rollback" => await ExecuteRollbackAsync(serviceProvider, commandArgs),
-                "help" or "--help" or "-h" => ShowHelp(),
-                _ => ShowError($"Unknown command: {command}")
-            };
+            var serviceProvider = services.BuildServiceProvider();
+            var database = serviceProvider.GetRequiredService<TokenDatabase>();
+            await database.InitializeAsync();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error: {ex.Message}");
-            return 1;
-        }
-    }
-
-    private static async Task<int> ExecuteImportAsync(ServiceProvider serviceProvider)
-    {
-        var cmd = serviceProvider.GetRequiredService<ImportCommand>();
-        return await cmd.ExecuteAsync();
-    }
-
-    private static async Task<int> ExecuteListAsync(ServiceProvider serviceProvider)
-    {
-        var cmd = serviceProvider.GetRequiredService<ListCommand>();
-        return await cmd.ExecuteAsync();
-    }
-
-    private static async Task<int> ExecuteShowAsync(ServiceProvider serviceProvider, string[] args)
-    {
-        var cmd = serviceProvider.GetRequiredService<ShowCommand>();
-        var identifier = args.Length > 0 ? args[0] : null;
-        return await cmd.ExecuteAsync(identifier);
-    }
-
-    private static async Task<int> ExecuteActivateAsync(ServiceProvider serviceProvider, string[] args)
-    {
-        if (args.Length == 0)
-        {
-            Console.WriteLine("Error: Please specify an identity ID or email to activate");
+            AnsiConsole.MarkupLine($"[red]Failed to initialize database:[/] {ex.Message}");
             return 1;
         }
 
-        var cmd = serviceProvider.GetRequiredService<ActivateCommand>();
-        return await cmd.ExecuteAsync(args[0]);
-    }
-
-    private static async Task<int> ExecuteRemoveAsync(ServiceProvider serviceProvider, string[] args)
-    {
-        if (args.Length == 0)
-        {
-            Console.WriteLine("Error: Please specify at least one identity ID or email to remove");
-            return 1;
-        }
-
-        var cmd = serviceProvider.GetRequiredService<RemoveCommand>();
-        return await cmd.ExecuteAsync(args);
-    }
-
-    private static async Task<int> ExecuteRollbackAsync(ServiceProvider serviceProvider, string[] args)
-    {
-        var identifier = args.Length > 0 && !args[0].StartsWith("--") ? args[0] : null;
-        int? version = null;
-
-        // Look for --version flag
-        for (int i = 0; i < args.Length; i++)
-        {
-            if (args[i] == "--version" && i + 1 < args.Length)
-            {
-                if (int.TryParse(args[i + 1], out var v))
-                {
-                    version = v;
-                }
-                break;
-            }
-        }
-
-        var cmd = serviceProvider.GetRequiredService<RollbackCommand>();
-        return await cmd.ExecuteAsync(identifier, version);
-    }
-
-    private static int ShowHelp()
-    {
-        Console.WriteLine("Codex Token Manager - Manage multiple Codex authentication tokens");
-        Console.WriteLine();
-        Console.WriteLine("Usage: codex-tokens <command> [options]");
-        Console.WriteLine();
-        Console.WriteLine("Commands:");
-        Console.WriteLine("  import                      Scan and import *auth.json files from the Codex folder");
-        Console.WriteLine("  list                        List all stored identities/tokens");
-        Console.WriteLine("  show [identifier]           Show identity details (current one by default)");
-        Console.WriteLine("  activate <identifier>       Mark an identity as active and update auth.json");
-        Console.WriteLine("  remove <identifiers...>     Delete one or more identities");
-        Console.WriteLine("  rollback [identifier]       Restore a previous version of an identity");
-        Console.WriteLine("                              [--version N]  Specify version number to rollback to");
-        Console.WriteLine("  help                        Show this help message");
-        Console.WriteLine();
-        Console.WriteLine("Global options:");
-        Console.WriteLine("  --dev                       Use development environment");
-        Console.WriteLine();
-        Console.WriteLine("Environment:");
-        Console.WriteLine("  Set CODEX_ENV=development to use development paths by default");
-        return 0;
-    }
-
-    private static int ShowError(string message)
-    {
-        Console.WriteLine(message);
-        Console.WriteLine("Use 'codex-tokens help' for usage information");
-        return 1;
+        return await app.RunAsync(args);
     }
 
     private static void ConfigureServices(ServiceCollection services, bool isDevelopment)
@@ -161,6 +89,7 @@ class Program
         if (isDevelopment)
         {
             services.AddSingleton<IPathProvider, DevelopmentPathProvider>();
+            AnsiConsole.MarkupLine("[yellow]Running in development mode[/]");
         }
         else
         {

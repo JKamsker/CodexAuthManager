@@ -1,5 +1,6 @@
 using CodexAuthManager.Cli.Commands;
 using CodexAuthManager.Tests.TestHelpers;
+using Spectre.Console.Cli;
 using Xunit;
 
 namespace CodexAuthManager.Tests.Integration;
@@ -7,6 +8,7 @@ namespace CodexAuthManager.Tests.Integration;
 /// <summary>
 /// End-to-end integration tests simulating complete user workflows
 /// </summary>
+[Collection("CommandTests")]
 public class EndToEndWorkflowTests : IDisposable
 {
     private readonly TestFixture _fixture;
@@ -34,7 +36,9 @@ public class EndToEndWorkflowTests : IDisposable
 
         // Step 1: Import
         var importCmd = new ImportCommand(_fixture.AuthJsonService, _fixture.TokenManagement, _fixture.BackupService);
-        var importResult = await importCmd.ExecuteAsync();
+        var importSettings = new ImportSettings();
+        var importContext = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "import", null);
+        var importResult = await importCmd.ExecuteAsync(importContext, importSettings);
         Assert.Equal(0, importResult);
 
         // Verify import
@@ -43,7 +47,9 @@ public class EndToEndWorkflowTests : IDisposable
 
         // Step 2: List
         var listCmd = new ListCommand(_fixture.IdentityRepository);
-        var listResult = await listCmd.ExecuteAsync();
+        var listSettings = new ListSettings();
+        var listContext = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "list", null);
+        var listResult = await listCmd.ExecuteAsync(listContext, listSettings);
         Assert.Equal(0, listResult);
 
         // Step 3: Activate user1
@@ -53,7 +59,9 @@ public class EndToEndWorkflowTests : IDisposable
             _fixture.AuthJsonService,
             _fixture.BackupService);
 
-        var activateResult = await activateCmd.ExecuteAsync("user1@example.com");
+        var activateSettings = new ActivateSettings { Identifier = "user1@example.com" };
+        var activateContext = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "activate", null);
+        var activateResult = await activateCmd.ExecuteAsync(activateContext, activateSettings);
         Assert.Equal(0, activateResult);
 
         // Verify activation
@@ -72,7 +80,7 @@ public class EndToEndWorkflowTests : IDisposable
         _fixture.AuthJsonService.WriteAuthToken($"{codexFolder}/1-auth.json", updatedUser1Token);
 
         // Re-import
-        await importCmd.ExecuteAsync();
+        await importCmd.ExecuteAsync(importContext, importSettings);
 
         // Verify new version created
         var user1Identity = await _fixture.IdentityRepository.GetByEmailAsync("user1@example.com");
@@ -91,7 +99,9 @@ public class EndToEndWorkflowTests : IDisposable
             _fixture.AuthJsonService,
             _fixture.BackupService);
 
-        var rollbackResult = await rollbackCmd.ExecuteAsync("user1@example.com", versionNumber: 1);
+        var rollbackSettings = new RollbackSettings { Identifier = "user1@example.com", Version = 1 };
+        var rollbackContext = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "rollback", null);
+        var rollbackResult = await rollbackCmd.ExecuteAsync(rollbackContext, rollbackSettings);
         Assert.Equal(0, rollbackResult);
 
         // Verify rollback
@@ -106,7 +116,8 @@ public class EndToEndWorkflowTests : IDisposable
         Assert.Equal("user1_token", activeAuthToken.Tokens.AccessToken);
 
         // Step 6: Switch to user2
-        await activateCmd.ExecuteAsync("user2@example.com");
+        activateSettings.Identifier = "user2@example.com";
+        await activateCmd.ExecuteAsync(activateContext, activateSettings);
 
         activeIdentity = await _fixture.IdentityRepository.GetActiveIdentityAsync();
         Assert.NotNull(activeIdentity);
@@ -126,11 +137,13 @@ public class EndToEndWorkflowTests : IDisposable
         _fixture.AuthJsonService.WriteAuthToken($"{codexFolder}/auth.json", authToken);
 
         var importCmd = new ImportCommand(_fixture.AuthJsonService, _fixture.TokenManagement, _fixture.BackupService);
+        var importSettings = new ImportSettings();
+        var importContext = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "import", null);
 
         // Act - Import same token 3 times
-        await importCmd.ExecuteAsync();
-        await importCmd.ExecuteAsync();
-        await importCmd.ExecuteAsync();
+        await importCmd.ExecuteAsync(importContext, importSettings);
+        await importCmd.ExecuteAsync(importContext, importSettings);
+        await importCmd.ExecuteAsync(importContext, importSettings);
 
         // Assert - Only 1 version should exist
         var identities = (await _fixture.IdentityRepository.GetAllAsync()).ToList();
@@ -142,7 +155,7 @@ public class EndToEndWorkflowTests : IDisposable
         // Now change the token and import again
         authToken.Tokens.AccessToken = "new_token";
         _fixture.AuthJsonService.WriteAuthToken($"{codexFolder}/auth.json", authToken);
-        await importCmd.ExecuteAsync();
+        await importCmd.ExecuteAsync(importContext, importSettings);
 
         // Assert - Now 2 versions should exist
         versions = (await _fixture.TokenVersionRepository.GetVersionsAsync(identities[0].Id)).ToList();
@@ -216,18 +229,24 @@ public class EndToEndWorkflowTests : IDisposable
             _fixture.AuthJsonService,
             _fixture.BackupService);
 
+        var activateSettings = new ActivateSettings();
+        var activateContext = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "activate", null);
+
         // Activate identity1
-        await activateCmd.ExecuteAsync(id1.ToString());
+        activateSettings.Identifier = id1.ToString();
+        await activateCmd.ExecuteAsync(activateContext, activateSettings);
         var authToken = _fixture.AuthJsonService.ReadActiveAuthToken();
         Assert.Equal("token1", authToken!.Tokens.AccessToken);
 
         // Activate identity2
-        await activateCmd.ExecuteAsync(id2.ToString());
+        activateSettings.Identifier = id2.ToString();
+        await activateCmd.ExecuteAsync(activateContext, activateSettings);
         authToken = _fixture.AuthJsonService.ReadActiveAuthToken();
         Assert.Equal("token2", authToken!.Tokens.AccessToken);
 
         // Activate identity1 again
-        await activateCmd.ExecuteAsync(id1.ToString());
+        activateSettings.Identifier = id1.ToString();
+        await activateCmd.ExecuteAsync(activateContext, activateSettings);
         authToken = _fixture.AuthJsonService.ReadActiveAuthToken();
         Assert.Equal("token1", authToken!.Tokens.AccessToken);
     }

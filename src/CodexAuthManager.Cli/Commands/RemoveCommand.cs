@@ -1,12 +1,22 @@
 using CodexAuthManager.Core.Data;
 using CodexAuthManager.Core.Services;
+using Spectre.Console;
+using Spectre.Console.Cli;
+using System.ComponentModel;
 
 namespace CodexAuthManager.Cli.Commands;
+
+public class RemoveSettings : CommandSettings
+{
+    [Description("One or more identity IDs or emails to remove")]
+    [CommandArgument(0, "<identifiers>")]
+    public string[] Identifiers { get; set; } = Array.Empty<string>();
+}
 
 /// <summary>
 /// Handles the remove command - deletes identities
 /// </summary>
-public class RemoveCommand
+public class RemoveCommand : AsyncCommand<RemoveSettings>
 {
     private readonly IIdentityRepository _identityRepository;
     private readonly DatabaseBackupService _backupService;
@@ -19,21 +29,22 @@ public class RemoveCommand
         _backupService = backupService;
     }
 
-    public async Task<int> ExecuteAsync(string[] identifiers)
+    public override async Task<int> ExecuteAsync(CommandContext context, RemoveSettings settings)
     {
-        if (!identifiers.Any())
+        if (!settings.Identifiers.Any())
         {
-            Console.WriteLine("Please specify at least one identity ID or email to remove.");
+            AnsiConsole.MarkupLine("[red]Please specify at least one identity ID or email to remove.[/]");
             return 1;
         }
 
-        Console.WriteLine("Creating backup before deletion...");
+        AnsiConsole.MarkupLine("[dim]Creating backup before deletion...[/]");
         await _backupService.CreateBackupAsync();
+        AnsiConsole.WriteLine();
 
         int removed = 0;
         int failed = 0;
 
-        foreach (var identifier in identifiers)
+        foreach (var identifier in settings.Identifiers)
         {
             Core.Models.Identity? identity = null;
 
@@ -48,7 +59,7 @@ public class RemoveCommand
 
             if (identity == null)
             {
-                Console.WriteLine($"✗ Identity not found: {identifier}");
+                AnsiConsole.MarkupLine($"[red]✗[/] Identity not found: [dim]{identifier}[/]");
                 failed++;
                 continue;
             }
@@ -56,17 +67,27 @@ public class RemoveCommand
             try
             {
                 await _identityRepository.DeleteAsync(identity.Id);
-                Console.WriteLine($"✓ Removed identity: {identity.Email}");
+                AnsiConsole.MarkupLine($"[green]✓[/] Removed identity: [bold]{identity.Email}[/]");
                 removed++;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"✗ Failed to remove {identity.Email}: {ex.Message}");
+                AnsiConsole.MarkupLine($"[red]✗[/] Failed to remove {identity.Email}: [dim]{ex.Message}[/]");
                 failed++;
             }
         }
 
-        Console.WriteLine($"\nRemoval complete: {removed} removed, {failed} failed");
+        AnsiConsole.WriteLine();
+        var table = new Table();
+        table.Border(TableBorder.Rounded);
+        table.AddColumn("Status");
+        table.AddColumn(new TableColumn("Count").RightAligned());
+
+        table.AddRow("[green]Removed[/]", $"[green]{removed}[/]");
+        table.AddRow("[red]Failed[/]", $"[red]{failed}[/]");
+
+        AnsiConsole.Write(table);
+
         return failed > 0 ? 1 : 0;
     }
 }

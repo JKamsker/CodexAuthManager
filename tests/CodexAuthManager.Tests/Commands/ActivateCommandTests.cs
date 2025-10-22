@@ -1,9 +1,11 @@
 using CodexAuthManager.Cli.Commands;
 using CodexAuthManager.Tests.TestHelpers;
+using Spectre.Console.Cli;
 using Xunit;
 
 namespace CodexAuthManager.Tests.Commands;
 
+[Collection("CommandTests")]
 public class ActivateCommandTests : IDisposable
 {
     private readonly TestFixture _fixture;
@@ -32,9 +34,11 @@ public class ActivateCommandTests : IDisposable
     {
         // Arrange
         var identityId = await CreateIdentityWithVersionAsync("test@example.com");
+        var settings = new ActivateSettings { Identifier = identityId.ToString() };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "activate", null);
 
         // Act
-        var result = await _command.ExecuteAsync(identityId.ToString());
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(0, result);
@@ -49,9 +53,11 @@ public class ActivateCommandTests : IDisposable
     {
         // Arrange
         var identityId = await CreateIdentityWithVersionAsync("activate-me@example.com");
+        var settings = new ActivateSettings { Identifier = "activate-me@example.com" };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "activate", null);
 
         // Act
-        var result = await _command.ExecuteAsync("activate-me@example.com");
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(0, result);
@@ -66,9 +72,11 @@ public class ActivateCommandTests : IDisposable
     {
         // Arrange
         var identityId = await CreateIdentityWithVersionAsync("test@example.com");
+        var settings = new ActivateSettings { Identifier = identityId.ToString() };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "activate", null);
 
         // Act
-        await _command.ExecuteAsync(identityId.ToString());
+        await _command.ExecuteAsync(context, settings);
 
         // Assert
         var activeAuthPath = _fixture.PathProvider.GetActiveAuthJsonPath();
@@ -87,8 +95,11 @@ public class ActivateCommandTests : IDisposable
 
         await _fixture.IdentityRepository.SetActiveAsync(id1);
 
+        var settings = new ActivateSettings { Identifier = id2.ToString() };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "activate", null);
+
         // Act
-        await _command.ExecuteAsync(id2.ToString());
+        await _command.ExecuteAsync(context, settings);
 
         // Assert
         var identity1 = await _fixture.IdentityRepository.GetByIdAsync(id1);
@@ -101,8 +112,11 @@ public class ActivateCommandTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_ShouldReturnError_WhenIdentityNotFound()
     {
+        var settings = new ActivateSettings { Identifier = "nonexistent@example.com" };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "activate", null);
+
         // Act
-        var result = await _command.ExecuteAsync("nonexistent@example.com");
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(1, result);
@@ -115,8 +129,11 @@ public class ActivateCommandTests : IDisposable
         var identity = SampleData.CreateIdentity(0, "noversion@example.com");
         var identityId = await _fixture.IdentityRepository.CreateAsync(identity);
 
+        var settings = new ActivateSettings { Identifier = identityId.ToString() };
+        var context = new CommandContext(Array.Empty<string>(), new TestRemainingArguments(), "activate", null);
+
         // Act
-        var result = await _command.ExecuteAsync(identityId.ToString());
+        var result = await _command.ExecuteAsync(context, settings);
 
         // Assert
         Assert.Equal(1, result);
