@@ -23,31 +23,80 @@ public class TokenManagementService
     }
 
     /// <summary>
-    /// Imports or updates a token, creating a new version if it differs from the current one
+    /// Imports or updates a token, creating a new version if it differs from the current one.
+    /// Matches identities by email or AccountId, and updates missing fields.
     /// </summary>
     public async Task<(int identityId, int versionId, bool isNew)> ImportOrUpdateTokenAsync(AuthToken authToken)
     {
         // Decode JWT to get metadata
         var metadata = _jwtDecoder.DecodeIdToken(authToken.Tokens.IdToken);
 
-        // Check if identity exists
-        var identity = await _identityRepository.GetByEmailAsync(metadata.Email);
+        // Try to find existing identity by multiple criteria
+        Identity? identity = null;
+
+        // Try matching by email first if available
+        if (!string.IsNullOrWhiteSpace(metadata.Email))
+        {
+            identity = await _identityRepository.GetByEmailAsync(metadata.Email);
+        }
+
+        // Try matching by AccountId if not found by email
+        if (identity == null && !string.IsNullOrWhiteSpace(metadata.AccountId))
+        {
+            identity = await _identityRepository.GetByAccountIdAsync(metadata.AccountId);
+        }
+
         bool isNewIdentity = identity == null;
+        bool identityUpdated = false;
 
         if (identity == null)
         {
             // Create new identity
             identity = new Identity
             {
-                Email = metadata.Email,
-                AccountId = metadata.AccountId,
-                UserId = metadata.UserId,
-                PlanType = metadata.PlanType,
+                Email = metadata.Email ?? string.Empty,
+                AccountId = metadata.AccountId ?? string.Empty,
+                UserId = metadata.UserId ?? string.Empty,
+                PlanType = metadata.PlanType ?? string.Empty,
                 IsActive = false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
             identity.Id = await _identityRepository.CreateAsync(identity);
+        }
+        else
+        {
+            // Update existing identity with missing or changed fields
+            if (string.IsNullOrWhiteSpace(identity.Email) && !string.IsNullOrWhiteSpace(metadata.Email))
+            {
+                identity.Email = metadata.Email;
+                identityUpdated = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(identity.AccountId) && !string.IsNullOrWhiteSpace(metadata.AccountId))
+            {
+                identity.AccountId = metadata.AccountId;
+                identityUpdated = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(identity.UserId) && !string.IsNullOrWhiteSpace(metadata.UserId))
+            {
+                identity.UserId = metadata.UserId;
+                identityUpdated = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(identity.PlanType) && !string.IsNullOrWhiteSpace(metadata.PlanType))
+            {
+                identity.PlanType = metadata.PlanType;
+                identityUpdated = true;
+            }
+
+            // Always update PlanType if it changed (plan can be upgraded/downgraded)
+            if (!string.IsNullOrWhiteSpace(metadata.PlanType) && identity.PlanType != metadata.PlanType)
+            {
+                identity.PlanType = metadata.PlanType;
+                identityUpdated = true;
+            }
         }
 
         // Check if current version differs
@@ -57,7 +106,7 @@ public class TokenManagementService
                             currentVersion.AccessToken != authToken.Tokens.AccessToken ||
                             currentVersion.RefreshToken != authToken.Tokens.RefreshToken;
 
-        if (!tokensChanged && currentVersion != null)
+        if (!tokensChanged && currentVersion != null && !identityUpdated)
         {
             return (identity.Id, currentVersion.Id, false);
         }
@@ -86,9 +135,8 @@ public class TokenManagementService
         // Set as current version
         await _tokenVersionRepository.SetCurrentVersionAsync(identity.Id, versionId);
 
-        // Update identity metadata
+        // Update identity metadata (always update timestamp and conditionally update other fields)
         identity.UpdatedAt = DateTime.UtcNow;
-        identity.PlanType = metadata.PlanType;
         await _identityRepository.UpdateAsync(identity);
 
         return (identity.Id, versionId, isNewIdentity);

@@ -25,12 +25,12 @@ public class EndToEndWorkflowTests : IDisposable
         var codexFolder = _fixture.PathProvider.GetCodexFolderPath();
 
         var user1Token = SampleData.CreateAuthToken();
-        user1Token.Tokens.IdToken = SampleData.CreateSampleIdToken("user1@example.com");
+        user1Token.Tokens.IdToken = SampleData.CreateSampleIdToken("user1@example.com", accountId: "account-user1");
         user1Token.Tokens.AccessToken = "user1_token";
         _fixture.AuthJsonService.WriteAuthToken($"{codexFolder}/1-auth.json", user1Token);
 
         var user2Token = SampleData.CreateAuthToken();
-        user2Token.Tokens.IdToken = SampleData.CreateSampleIdToken("user2@example.com");
+        user2Token.Tokens.IdToken = SampleData.CreateSampleIdToken("user2@example.com", accountId: "account-user2");
         user2Token.Tokens.AccessToken = "user2_token";
         _fixture.AuthJsonService.WriteAuthToken($"{codexFolder}/2-auth.json", user2Token);
 
@@ -75,7 +75,7 @@ public class EndToEndWorkflowTests : IDisposable
 
         // Step 4: Update user1's token (simulate refresh)
         var updatedUser1Token = SampleData.CreateAuthToken();
-        updatedUser1Token.Tokens.IdToken = SampleData.CreateSampleIdToken("user1@example.com");
+        updatedUser1Token.Tokens.IdToken = SampleData.CreateSampleIdToken("user1@example.com", accountId: "account-user1");
         updatedUser1Token.Tokens.AccessToken = "user1_token_v2";
         _fixture.AuthJsonService.WriteAuthToken($"{codexFolder}/1-auth.json", updatedUser1Token);
 
@@ -214,12 +214,12 @@ public class EndToEndWorkflowTests : IDisposable
     {
         // Arrange
         var identity1Token = SampleData.CreateAuthToken();
-        identity1Token.Tokens.IdToken = SampleData.CreateSampleIdToken("identity1@example.com");
+        identity1Token.Tokens.IdToken = SampleData.CreateSampleIdToken("identity1@example.com", accountId: "account-identity1");
         identity1Token.Tokens.AccessToken = "token1";
         var (id1, _, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(identity1Token);
 
         var identity2Token = SampleData.CreateAuthToken();
-        identity2Token.Tokens.IdToken = SampleData.CreateSampleIdToken("identity2@example.com");
+        identity2Token.Tokens.IdToken = SampleData.CreateSampleIdToken("identity2@example.com", accountId: "account-identity2");
         identity2Token.Tokens.AccessToken = "token2";
         var (id2, _, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(identity2Token);
 

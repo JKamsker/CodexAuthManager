@@ -24,7 +24,9 @@ public class ActivateCommandTests : IDisposable
     private async Task<int> CreateIdentityWithVersionAsync(string email)
     {
         var authToken = SampleData.CreateAuthToken();
-        authToken.Tokens.IdToken = SampleData.CreateSampleIdToken(email);
+        // Use email as part of accountId to ensure uniqueness
+        var accountId = $"account-{email.Replace("@", "-").Replace(".", "-")}";
+        authToken.Tokens.IdToken = SampleData.CreateSampleIdToken(email, accountId: accountId);
         var (identityId, _, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(authToken);
         return identityId;
     }

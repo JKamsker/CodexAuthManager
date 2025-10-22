@@ -155,7 +155,7 @@ public class TokenManagementServiceTests : IDisposable
         var (identityId1, versionId1, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(authToken1);
 
         var authToken2 = SampleData.CreateAuthToken();
-        authToken2.Tokens.IdToken = SampleData.CreateSampleIdToken("other@example.com");
+        authToken2.Tokens.IdToken = SampleData.CreateSampleIdToken("other@example.com", accountId: "other-account-id");
         var (identityId2, _, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(authToken2);
 
         // Act & Assert
@@ -217,6 +217,158 @@ public class TokenManagementServiceTests : IDisposable
         {
             Assert.Equal(5 - i, versions[i].VersionNumber); // Descending order
         }
+    }
+
+    [Fact]
+    public async Task ImportOrUpdateTokenAsync_ShouldFillAllColumns_ForNewIdentity()
+    {
+        // Arrange
+        var authToken = SampleData.CreateAuthToken();
+
+        // Act
+        var (identityId, _, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(authToken);
+
+        // Assert
+        var identity = await _fixture.IdentityRepository.GetByIdAsync(identityId);
+        Assert.NotNull(identity);
+        Assert.Equal("test@example.com", identity.Email);
+        Assert.Equal("test-account-id", identity.AccountId);
+        Assert.Equal("user-test123", identity.UserId);
+        Assert.Equal("plus", identity.PlanType);
+    }
+
+    [Fact]
+    public async Task ImportOrUpdateTokenAsync_ShouldUpdateMissingColumns_InExistingIdentity()
+    {
+        // Arrange - Create identity with only email
+        var identity = new Identity
+        {
+            Email = "test@example.com",
+            AccountId = string.Empty,
+            UserId = string.Empty,
+            PlanType = string.Empty,
+            IsActive = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        identity.Id = await _fixture.IdentityRepository.CreateAsync(identity);
+
+        var authToken = SampleData.CreateAuthToken();
+
+        // Act - Import token with full metadata
+        var (identityId, _, isNew) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(authToken);
+
+        // Assert
+        Assert.Equal(identity.Id, identityId);
+        Assert.False(isNew); // Not a new identity
+
+        var updatedIdentity = await _fixture.IdentityRepository.GetByIdAsync(identityId);
+        Assert.NotNull(updatedIdentity);
+        Assert.Equal("test@example.com", updatedIdentity.Email);
+        Assert.Equal("test-account-id", updatedIdentity.AccountId);
+        Assert.Equal("user-test123", updatedIdentity.UserId);
+        Assert.Equal("plus", updatedIdentity.PlanType);
+    }
+
+    [Fact]
+    public async Task ImportOrUpdateTokenAsync_ShouldMatchByAccountId_WhenEmailNotFound()
+    {
+        // Arrange - Create identity with AccountId but different email
+        var identity = new Identity
+        {
+            Email = "old@example.com",
+            AccountId = "test-account-id",
+            UserId = "user-test123",
+            PlanType = "plus",
+            IsActive = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        identity.Id = await _fixture.IdentityRepository.CreateAsync(identity);
+
+        var authToken = SampleData.CreateAuthToken(); // Has email "test@example.com"
+
+        // Act - Import should match by AccountId, not create new identity
+        var (identityId, _, isNew) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(authToken);
+
+        // Assert
+        Assert.Equal(identity.Id, identityId);
+        Assert.False(isNew); // Not a new identity
+
+        var allIdentities = await _fixture.IdentityRepository.GetAllAsync();
+        Assert.Single(allIdentities); // Should still only have 1 identity
+    }
+
+    [Fact]
+    public async Task ImportOrUpdateTokenAsync_ShouldUpdateEmail_WhenMissing()
+    {
+        // Arrange - Create identity with only AccountId
+        var identity = new Identity
+        {
+            Email = string.Empty,
+            AccountId = "test-account-id",
+            UserId = "user-test123",
+            PlanType = "plus",
+            IsActive = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        identity.Id = await _fixture.IdentityRepository.CreateAsync(identity);
+
+        var authToken = SampleData.CreateAuthToken();
+
+        // Act
+        var (identityId, _, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(authToken);
+
+        // Assert
+        var updatedIdentity = await _fixture.IdentityRepository.GetByIdAsync(identityId);
+        Assert.NotNull(updatedIdentity);
+        Assert.Equal("test@example.com", updatedIdentity.Email);
+    }
+
+    [Fact]
+    public async Task ImportOrUpdateTokenAsync_ShouldUpdatePlanType_WhenChanged()
+    {
+        // Arrange - Import with initial plan type
+        var authToken = SampleData.CreateAuthToken();
+        var (identityId, _, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(authToken);
+
+        // Change plan type in token
+        var idTokenWithPro = SampleData.CreateSampleIdToken("test@example.com", planType: "pro");
+        authToken.Tokens.IdToken = idTokenWithPro;
+        authToken.Tokens.AccessToken = "new_token"; // Change token to force version creation
+
+        // Act
+        await _fixture.TokenManagement.ImportOrUpdateTokenAsync(authToken);
+
+        // Assert
+        var updatedIdentity = await _fixture.IdentityRepository.GetByIdAsync(identityId);
+        Assert.NotNull(updatedIdentity);
+        Assert.Equal("pro", updatedIdentity.PlanType);
+    }
+
+    [Fact]
+    public async Task ImportOrUpdateTokenAsync_ShouldNotOverwriteExistingFields_WithEmptyValues()
+    {
+        // Arrange - Create identity with all fields populated
+        var authToken = SampleData.CreateAuthToken();
+        var (identityId, _, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(authToken);
+
+        // Create token with empty metadata (simulating incomplete JWT)
+        var incompleteIdToken = SampleData.CreateSampleIdToken("test@example.com", accountId: "", userId: "", planType: "");
+        var incompleteToken = SampleData.CreateAuthToken();
+        incompleteToken.Tokens.IdToken = incompleteIdToken;
+        incompleteToken.Tokens.AccessToken = "different_token";
+
+        // Act
+        await _fixture.TokenManagement.ImportOrUpdateTokenAsync(incompleteToken);
+
+        // Assert - Original values should be preserved
+        var identity = await _fixture.IdentityRepository.GetByIdAsync(identityId);
+        Assert.NotNull(identity);
+        Assert.Equal("test-account-id", identity.AccountId);
+        Assert.Equal("user-test123", identity.UserId);
+        Assert.Equal("plus", identity.PlanType); // Should keep original value
     }
 
     public void Dispose()

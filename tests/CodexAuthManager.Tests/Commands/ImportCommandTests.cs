@@ -26,11 +26,11 @@ public class ImportCommandTests : IDisposable
         // Arrange
         var codexFolder = _fixture.PathProvider.GetCodexFolderPath();
         var authToken1 = SampleData.CreateAuthToken();
-        authToken1.Tokens.IdToken = SampleData.CreateSampleIdToken("user1@example.com");
+        authToken1.Tokens.IdToken = SampleData.CreateSampleIdToken("user1@example.com", accountId: "account-1");
         _fixture.AuthJsonService.WriteAuthToken($"{codexFolder}/1-auth.json", authToken1);
 
         var authToken2 = SampleData.CreateAuthToken();
-        authToken2.Tokens.IdToken = SampleData.CreateSampleIdToken("user2@example.com");
+        authToken2.Tokens.IdToken = SampleData.CreateSampleIdToken("user2@example.com", accountId: "account-2");
         _fixture.AuthJsonService.WriteAuthToken($"{codexFolder}/2-auth.json", authToken2);
 
         var settings = new ImportSettings();

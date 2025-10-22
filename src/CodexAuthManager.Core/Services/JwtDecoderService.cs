@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Text.Json;
 using CodexAuthManager.Core.Models;
 
 namespace CodexAuthManager.Core.Services;
@@ -30,34 +31,64 @@ public class JwtDecoderService
         if (emailVerifiedClaim != null)
             metadata.EmailVerified = bool.Parse(emailVerifiedClaim.Value);
 
-        // Extract OpenAI-specific claims
-        var authClaims = token.Claims.Where(c => c.Type == "https://api.openai.com/auth").ToList();
-        if (authClaims.Any())
+        // Extract OpenAI-specific claims from nested JSON
+        var authClaim = token.Claims.FirstOrDefault(c => c.Type == "https://api.openai.com/auth");
+        if (authClaim != null)
         {
-            // The auth claim contains a JSON object, we need to parse the value
-            var authClaim = authClaims.First();
-            // For simplicity, we'll extract from individual nested claims if the library provides them
-            // Otherwise we'd need to parse the JSON string
+            try
+            {
+                // Parse the JSON string in the auth claim
+                using var authDoc = JsonDocument.Parse(authClaim.Value);
+                var authRoot = authDoc.RootElement;
+
+                if (authRoot.TryGetProperty("chatgpt_account_id", out var accountIdElem))
+                    metadata.AccountId = accountIdElem.GetString();
+
+                if (authRoot.TryGetProperty("chatgpt_user_id", out var userIdElem))
+                    metadata.UserId = userIdElem.GetString();
+
+                if (authRoot.TryGetProperty("chatgpt_plan_type", out var planTypeElem))
+                    metadata.PlanType = planTypeElem.GetString();
+
+                if (authRoot.TryGetProperty("chatgpt_subscription_active_start", out var startElem))
+                {
+                    if (DateTime.TryParse(startElem.GetString(), out var startDate))
+                        metadata.SubscriptionActiveStart = startDate;
+                }
+
+                if (authRoot.TryGetProperty("chatgpt_subscription_active_until", out var endElem))
+                {
+                    if (DateTime.TryParse(endElem.GetString(), out var endDate))
+                        metadata.SubscriptionActiveUntil = endDate;
+                }
+            }
+            catch
+            {
+                // If parsing fails, try fallback approach
+            }
         }
 
-        // Try to extract from individual claims
-        foreach (var claim in token.Claims)
+        // Try to extract from individual claims (fallback for flattened claims)
+        if (string.IsNullOrEmpty(metadata.AccountId) || string.IsNullOrEmpty(metadata.UserId) || string.IsNullOrEmpty(metadata.PlanType))
         {
-            if (claim.Type.Contains("chatgpt_account_id"))
-                metadata.AccountId = claim.Value;
-            else if (claim.Type.Contains("chatgpt_user_id") || claim.Type.Contains("user_id"))
-                metadata.UserId = claim.Value;
-            else if (claim.Type.Contains("chatgpt_plan_type"))
-                metadata.PlanType = claim.Value;
-            else if (claim.Type.Contains("chatgpt_subscription_active_start"))
+            foreach (var claim in token.Claims)
             {
-                if (DateTime.TryParse(claim.Value, out var startDate))
-                    metadata.SubscriptionActiveStart = startDate;
-            }
-            else if (claim.Type.Contains("chatgpt_subscription_active_until"))
-            {
-                if (DateTime.TryParse(claim.Value, out var endDate))
-                    metadata.SubscriptionActiveUntil = endDate;
+                if (string.IsNullOrEmpty(metadata.AccountId) && claim.Type.Contains("chatgpt_account_id"))
+                    metadata.AccountId = claim.Value;
+                else if (string.IsNullOrEmpty(metadata.UserId) && (claim.Type.Contains("chatgpt_user_id") || claim.Type.Contains("user_id")))
+                    metadata.UserId = claim.Value;
+                else if (string.IsNullOrEmpty(metadata.PlanType) && claim.Type.Contains("chatgpt_plan_type"))
+                    metadata.PlanType = claim.Value;
+                else if (metadata.SubscriptionActiveStart == null && claim.Type.Contains("chatgpt_subscription_active_start"))
+                {
+                    if (DateTime.TryParse(claim.Value, out var startDate))
+                        metadata.SubscriptionActiveStart = startDate;
+                }
+                else if (metadata.SubscriptionActiveUntil == null && claim.Type.Contains("chatgpt_subscription_active_until"))
+                {
+                    if (DateTime.TryParse(claim.Value, out var endDate))
+                        metadata.SubscriptionActiveUntil = endDate;
+                }
             }
         }
 

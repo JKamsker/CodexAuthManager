@@ -59,20 +59,41 @@ public static class SampleData
     /// <summary>
     /// Creates a sample JWT token with basic claims (not cryptographically valid, just for structure)
     /// </summary>
-    public static string CreateSampleIdToken(string email = "test@example.com", string planType = "plus")
+    public static string CreateSampleIdToken(
+        string email = "test@example.com",
+        string accountId = "test-account-id",
+        string userId = "user-test123",
+        string planType = "plus")
     {
         // This is a simplified JWT structure for testing
         // Header
         var header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
 
-        // Payload with claims
-        var claims = new
+        // Payload with claims (including OpenAI-specific claims)
+        var claims = new Dictionary<string, object>
         {
-            email = email,
-            email_verified = true,
-            iat = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            exp = DateTimeOffset.UtcNow.AddDays(1).ToUnixTimeSeconds()
+            ["email"] = email,
+            ["email_verified"] = true,
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ["exp"] = DateTimeOffset.UtcNow.AddDays(1).ToUnixTimeSeconds()
         };
+
+        // Add OpenAI auth claims if provided
+        if (!string.IsNullOrEmpty(accountId) || !string.IsNullOrEmpty(userId) || !string.IsNullOrEmpty(planType))
+        {
+            var authClaims = new Dictionary<string, string>();
+
+            if (!string.IsNullOrEmpty(accountId))
+                authClaims["chatgpt_account_id"] = accountId;
+
+            if (!string.IsNullOrEmpty(userId))
+                authClaims["chatgpt_user_id"] = userId;
+
+            if (!string.IsNullOrEmpty(planType))
+                authClaims["chatgpt_plan_type"] = planType;
+
+            claims["https://api.openai.com/auth"] = authClaims;
+        }
 
         var payloadJson = System.Text.Json.JsonSerializer.Serialize(claims);
         var payloadBytes = System.Text.Encoding.UTF8.GetBytes(payloadJson);
