@@ -1,4 +1,5 @@
 using CodexAuthManager.Core.Abstractions;
+using System.IO;
 
 namespace CodexAuthManager.Tests.TestHelpers;
 
@@ -9,13 +10,14 @@ public class TestPathProvider : IPathProvider
 {
     private readonly string _basePath;
 
-    public TestPathProvider(string basePath = "/test")
+    public TestPathProvider(string basePath)
     {
         _basePath = basePath;
+        Directory.CreateDirectory(_basePath);
     }
 
-    public string GetCodexFolderPath() => $"{_basePath}/.codex";
-    public string GetDatabasePath() => $"{_basePath}/tokens.db";
-    public string GetBackupFolderPath() => $"{_basePath}/backups";
-    public string GetActiveAuthJsonPath() => $"{_basePath}/.codex/auth.json";
+    public string GetCodexFolderPath() => Path.Combine(_basePath, ".codex");
+    public string GetDatabasePath() => Path.Combine(_basePath, "tokens.db");
+    public string GetBackupFolderPath() => Path.Combine(_basePath, "backups");
+    public string GetActiveAuthJsonPath() => Path.Combine(GetCodexFolderPath(), "auth.json");
 }

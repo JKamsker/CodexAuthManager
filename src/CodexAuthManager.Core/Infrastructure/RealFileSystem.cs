@@ -9,9 +9,18 @@ public class RealFileSystem : IFileSystem
 {
     public bool FileExists(string path) => File.Exists(path);
 
-    public string ReadAllText(string path) => File.ReadAllText(path);
+    public string ReadAllText(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
 
-    public void WriteAllText(string path, string content) => File.WriteAllText(path, content);
+    public void WriteAllText(string path, string content)
+    {
+        EnsureDirectoryExists(path);
+        File.WriteAllText(path, content);
+    }
 
     public IEnumerable<string> EnumerateFiles(string path, string searchPattern)
     {

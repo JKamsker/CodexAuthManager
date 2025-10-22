@@ -1,3 +1,4 @@
+using System.IO;
 using CodexAuthManager.Core.Abstractions;
 
 namespace CodexAuthManager.Core.Services;
@@ -32,9 +33,25 @@ public class DatabaseBackupService
         var backupFileName = $"tokens-backup-{timestamp}.db";
         var backupPath = Path.Combine(backupFolder, backupFileName);
 
-        // Read and write the database file
-        var dbContent = _fileSystem.ReadAllText(dbPath);
-        _fileSystem.WriteAllText(backupPath, dbContent);
+        // Ensure the destination folder exists before writing the backup file
+        _fileSystem.EnsureDirectoryExists(backupPath);
+
+        // Use file streams with shared read access so the live SQLite connection
+        // can keep the database open while we copy its bytes.
+        await using (var sourceStream = new FileStream(
+                         dbPath,
+                         FileMode.Open,
+                         FileAccess.Read,
+                         FileShare.ReadWrite | FileShare.Delete))
+        await using (var destinationStream = new FileStream(
+                         backupPath,
+                         FileMode.Create,
+                         FileAccess.Write,
+                         FileShare.None))
+        {
+            await sourceStream.CopyToAsync(destinationStream);
+            await destinationStream.FlushAsync();
+        }
 
         // Clean old backups (keep last 10)
         await CleanOldBackupsAsync();

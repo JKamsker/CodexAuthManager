@@ -1,4 +1,5 @@
 using CodexAuthManager.Tests.TestHelpers;
+using System.IO;
 using System.Text.Json;
 using Xunit;
 
@@ -153,9 +154,13 @@ public class AuthJsonServiceTests : IDisposable
     [Fact]
     public void ReadAuthToken_ShouldThrow_WhenFileNotFound()
     {
+        // Arrange
+        var missingPath = Path.Combine(_fixture.PathProvider.GetCodexFolderPath(), "missing-auth.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(missingPath)!);
+
         // Act & Assert
         Assert.Throws<FileNotFoundException>(() =>
-            _fixture.AuthJsonService.ReadAuthToken("/nonexistent/auth.json"));
+            _fixture.AuthJsonService.ReadAuthToken(missingPath));
     }
 
     [Fact]

@@ -35,7 +35,10 @@ public class ImportCommand : AsyncCommand<ImportSettings>
     {
         AnsiConsole.MarkupLine("[bold cyan]Scanning for auth.json files...[/]");
 
-        var authFiles = _authJsonService.ScanForAuthFiles().ToList();
+        var authFiles = _authJsonService.ScanForAuthFiles()
+            .OrderBy(file => Path.GetFileName(file).Equals("auth.json", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(file => file, StringComparer.OrdinalIgnoreCase)
+            .ToList();
         if (!authFiles.Any())
         {
             AnsiConsole.MarkupLine("[yellow]No auth.json files found.[/]");

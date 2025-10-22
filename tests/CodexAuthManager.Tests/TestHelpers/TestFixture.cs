@@ -1,7 +1,9 @@
+using System;
 using CodexAuthManager.Core.Abstractions;
 using CodexAuthManager.Core.Data;
 using CodexAuthManager.Core.Infrastructure;
 using CodexAuthManager.Core.Services;
+using System.IO;
 
 namespace CodexAuthManager.Tests.TestHelpers;
 
@@ -10,6 +12,8 @@ namespace CodexAuthManager.Tests.TestHelpers;
 /// </summary>
 public class TestFixture : IDisposable
 {
+    private readonly string _rootPath;
+
     public IFileSystem FileSystem { get; }
     public IPathProvider PathProvider { get; }
     public TokenDatabase Database { get; }
@@ -24,16 +28,23 @@ public class TestFixture : IDisposable
 
     public TestFixture()
     {
-        // Set up in-memory file system
-        FileSystem = new InMemoryFileSystem();
-        PathProvider = new TestPathProvider();
+        _rootPath = Path.Combine(
+            Path.GetTempPath(),
+            "CodexAuthManagerTests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_rootPath);
 
-        // Create fake database file for backup service
-        var dbPath = PathProvider.GetDatabasePath();
-        FileSystem.WriteAllText(dbPath, "fake-db-content");
+        // Set up real file system bound to a temporary root
+        FileSystem = new RealFileSystem();
+        PathProvider = new TestPathProvider(_rootPath);
 
-        // Set up in-memory database
-        Database = new TokenDatabase(PathProvider, useInMemory: true);
+        // Ensure base folders exist
+        FileSystem.EnsureDirectoryExists(PathProvider.GetDatabasePath());
+        Directory.CreateDirectory(PathProvider.GetBackupFolderPath());
+        Directory.CreateDirectory(Path.GetDirectoryName(PathProvider.GetActiveAuthJsonPath())!);
+
+        // Set up database using on-disk storage so backups operate on the real file
+        Database = new TokenDatabase(PathProvider, useInMemory: false);
         Database.InitializeAsync().Wait();
 
         // Set up repositories
@@ -54,5 +65,16 @@ public class TestFixture : IDisposable
     public void Dispose()
     {
         Database?.Dispose();
+        if (Directory.Exists(_rootPath))
+        {
+            try
+            {
+                Directory.Delete(_rootPath, recursive: true);
+            }
+            catch
+            {
+                // Ignore cleanup issues to avoid masking test failures
+            }
+        }
     }
 }
