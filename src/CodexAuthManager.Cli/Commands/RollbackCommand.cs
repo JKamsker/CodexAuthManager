@@ -49,7 +49,19 @@ public class RollbackCommand : AsyncCommand<RollbackSettings>
 
         if (string.IsNullOrEmpty(settings.Identifier))
         {
-            identity = await _identityRepository.GetActiveIdentityAsync();
+            // Try to get identity from active auth.json
+            var activeAuth = _authJsonService.ReadActiveAuthToken();
+            if (activeAuth != null && !string.IsNullOrEmpty(activeAuth.Tokens.AccountId))
+            {
+                identity = await _identityRepository.GetByAccountIdAsync(activeAuth.Tokens.AccountId);
+            }
+
+            // Fall back to database active identity
+            if (identity == null)
+            {
+                identity = await _identityRepository.GetActiveIdentityAsync();
+            }
+
             if (identity == null)
             {
                 AnsiConsole.MarkupLine("[red]No active identity found. Please specify an ID or email.[/]");

@@ -1,4 +1,5 @@
 using CodexAuthManager.Core.Data;
+using CodexAuthManager.Core.Services;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using System.ComponentModel;
@@ -19,13 +20,16 @@ public class ShowCommand : AsyncCommand<ShowSettings>
 {
     private readonly IIdentityRepository _identityRepository;
     private readonly ITokenVersionRepository _tokenVersionRepository;
+    private readonly AuthJsonService _authJsonService;
 
     public ShowCommand(
         IIdentityRepository identityRepository,
-        ITokenVersionRepository tokenVersionRepository)
+        ITokenVersionRepository tokenVersionRepository,
+        AuthJsonService authJsonService)
     {
         _identityRepository = identityRepository;
         _tokenVersionRepository = tokenVersionRepository;
+        _authJsonService = authJsonService;
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, ShowSettings settings)
@@ -35,7 +39,19 @@ public class ShowCommand : AsyncCommand<ShowSettings>
 
         if (string.IsNullOrEmpty(settings.Identifier))
         {
-            identity = await _identityRepository.GetActiveIdentityAsync();
+            // Try to get identity from active auth.json
+            var activeAuth = _authJsonService.ReadActiveAuthToken();
+            if (activeAuth != null && !string.IsNullOrEmpty(activeAuth.Tokens.AccountId))
+            {
+                identity = await _identityRepository.GetByAccountIdAsync(activeAuth.Tokens.AccountId);
+            }
+
+            // Fall back to database active identity
+            if (identity == null)
+            {
+                identity = await _identityRepository.GetActiveIdentityAsync();
+            }
+
             if (identity == null)
             {
                 AnsiConsole.MarkupLine("[red]No active identity found. Please specify an ID or email.[/]");

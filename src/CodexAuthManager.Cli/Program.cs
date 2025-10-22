@@ -62,6 +62,18 @@ class Program
                 .WithExample(new[] { "rollback", "2" })
                 .WithExample(new[] { "rollback", "user@example.com", "--version", "3" });
 
+            config.AddCommand<StatsCommand>("stats")
+                .WithDescription("Retrieve and save current usage statistics (5h limit, weekly limit)")
+                .WithExample(new[] { "stats" })
+                .WithExample(new[] { "stats", "2" })
+                .WithExample(new[] { "stats", "user@example.com" });
+
+            config.AddCommand<StatsEntryCommand>("stats-entry")
+                .WithDescription("Manually enter usage statistics (interactive)")
+                .WithExample(new[] { "stats-entry" })
+                .WithExample(new[] { "stats-entry", "2" })
+                .WithExample(new[] { "stats-entry", "user@example.com" });
+
             config.ValidateExamples();
         });
 
@@ -116,11 +128,19 @@ class Program
             return new TokenVersionRepository(database);
         });
 
+        services.AddSingleton<IUsageStatsRepository>(sp =>
+        {
+            var database = sp.GetRequiredService<TokenDatabase>();
+            return new UsageStatsRepository(database);
+        });
+
         // Services
         services.AddSingleton<JwtDecoderService>();
         services.AddSingleton<TokenManagementService>();
         services.AddSingleton<AuthJsonService>();
         services.AddSingleton<DatabaseBackupService>();
+        services.AddSingleton<ICodexProcessRunner, CodexProcessRunner>();
+        services.AddSingleton<CodexTuiService>();
 
         // Commands
         services.AddSingleton<ImportCommand>();
@@ -129,5 +149,7 @@ class Program
         services.AddSingleton<ActivateCommand>();
         services.AddSingleton<RemoveCommand>();
         services.AddSingleton<RollbackCommand>();
+        services.AddSingleton<StatsCommand>();
+        services.AddSingleton<StatsEntryCommand>();
     }
 }

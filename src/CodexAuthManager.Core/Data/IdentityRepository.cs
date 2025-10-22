@@ -41,6 +41,20 @@ public class IdentityRepository : IIdentityRepository
         return reader.Read() ? ReadIdentity(reader) : null;
     }
 
+    public async Task<Identity?> GetByAccountIdAsync(string accountId)
+    {
+        await using var command = _database.Connection.CreateCommand();
+        command.CommandText = """
+                              SELECT Id, Email, AccountId, UserId, PlanType, IsActive, CreatedAt, UpdatedAt
+                              FROM Identities
+                              WHERE AccountId = @accountId
+                              """;
+        command.Parameters.AddWithValue("@accountId", accountId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        return reader.Read() ? ReadIdentity(reader) : null;
+    }
+
     public async Task<Identity?> GetActiveIdentityAsync()
     {
         await using var command = _database.Connection.CreateCommand();

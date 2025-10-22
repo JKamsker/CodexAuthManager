@@ -61,11 +61,25 @@ public class TokenDatabase : IDisposable
                 UNIQUE(IdentityId, VersionNumber)
             );
 
+            -- UsageStats table
+            CREATE TABLE IF NOT EXISTS UsageStats (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                IdentityId INTEGER NOT NULL,
+                FiveHourLimitPercent INTEGER NOT NULL,
+                FiveHourLimitResetTime TEXT NOT NULL,
+                WeeklyLimitPercent INTEGER NOT NULL,
+                WeeklyLimitResetTime TEXT NOT NULL,
+                CapturedAt TEXT NOT NULL,
+                FOREIGN KEY (IdentityId) REFERENCES Identities(Id) ON DELETE CASCADE
+            );
+
             -- Indexes
             CREATE INDEX IF NOT EXISTS IX_Identities_Email ON Identities(Email);
             CREATE INDEX IF NOT EXISTS IX_Identities_IsActive ON Identities(IsActive);
             CREATE INDEX IF NOT EXISTS IX_TokenVersions_IdentityId ON TokenVersions(IdentityId);
             CREATE INDEX IF NOT EXISTS IX_TokenVersions_IsCurrent ON TokenVersions(IsCurrent);
+            CREATE INDEX IF NOT EXISTS IX_UsageStats_IdentityId ON UsageStats(IdentityId);
+            CREATE INDEX IF NOT EXISTS IX_UsageStats_CapturedAt ON UsageStats(CapturedAt);
         ";
 
         await command.ExecuteNonQueryAsync();

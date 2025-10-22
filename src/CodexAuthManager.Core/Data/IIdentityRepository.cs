@@ -9,6 +9,7 @@ public interface IIdentityRepository
 {
     Task<Identity?> GetByIdAsync(int id);
     Task<Identity?> GetByEmailAsync(string email);
+    Task<Identity?> GetByAccountIdAsync(string accountId);
     Task<Identity?> GetActiveIdentityAsync();
     Task<IEnumerable<Identity>> GetAllAsync();
     Task<int> CreateAsync(Identity identity);

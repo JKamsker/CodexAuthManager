@@ -19,6 +19,8 @@ public class TestFixture : IDisposable
     public TokenManagementService TokenManagement { get; }
     public AuthJsonService AuthJsonService { get; }
     public DatabaseBackupService BackupService { get; }
+    public IUsageStatsRepository UsageStatsRepository { get; }
+    public CodexTuiService CodexTuiService { get; }
 
     public TestFixture()
     {
@@ -37,12 +39,16 @@ public class TestFixture : IDisposable
         // Set up repositories
         IdentityRepository = new IdentityRepository(Database);
         TokenVersionRepository = new TokenVersionRepository(Database);
+        UsageStatsRepository = new UsageStatsRepository(Database);
 
         // Set up services
         JwtDecoder = new JwtDecoderService();
         TokenManagement = new TokenManagementService(IdentityRepository, TokenVersionRepository, JwtDecoder);
         AuthJsonService = new AuthJsonService(FileSystem, PathProvider);
         BackupService = new DatabaseBackupService(PathProvider, FileSystem);
+
+        var mockProcessRunner = new MockCodexProcessRunner();
+        CodexTuiService = new CodexTuiService(FileSystem, PathProvider, AuthJsonService, mockProcessRunner);
     }
 
     public void Dispose()
