@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CodexAuthManager.Core\CodexAuthManager.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-rc.2.25502.107" />
+    <PackageReference Include="System.CommandLine.NamingConventionBinder" Version="2.0.0-beta5.25306.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- .NET Tool Configuration -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>codex-tokens</ToolCommandName>
+    <PackageId>CodexAuthManager</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>JKamsker</Authors>
+    <Description>CLI tool to manage multiple Codex authentication tokens</Description>
+  </PropertyGroup>
+
+</Project>
