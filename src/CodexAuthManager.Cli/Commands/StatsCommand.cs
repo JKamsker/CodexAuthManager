@@ -9,9 +9,13 @@ namespace CodexAuthManager.Cli.Commands;
 
 public class StatsSettings : CommandSettings
 {
-    [Description("Identity ID, email, or leave empty for active identity")]
+    [Description("Identity ID, email, 'all' for all users, or leave empty for active identity")]
     [CommandArgument(0, "[identifier]")]
     public string? Identifier { get; set; }
+
+    [Description("Refresh stats from Codex before displaying")]
+    [CommandOption("-r|--refresh")]
+    public bool Refresh { get; set; }
 }
 
 /// <summary>
@@ -41,10 +45,47 @@ public class StatsCommand : AsyncCommand<StatsSettings>
 
     public override async Task<int> ExecuteAsync(CommandContext context, StatsSettings settings)
     {
-        // Get identity
+        // Handle "all" identifier
+        if (settings.Identifier?.Equals("all", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return await ShowAllStatsAsync(settings.Refresh);
+        }
+
+        // Get single identity
+        var identity = await GetIdentityAsync(settings.Identifier);
+        if (identity == null)
+        {
+            return 1;
+        }
+
+        // Refresh stats if requested
+        if (settings.Refresh)
+        {
+            var success = await RefreshStatsAsync(identity);
+            if (!success)
+            {
+                return 1;
+            }
+        }
+
+        // Display stats from database
+        var stats = await _usageStatsRepository.GetLatestAsync(identity.Id);
+        if (stats == null)
+        {
+            AnsiConsole.MarkupLine($"[yellow]No stats found for {identity.Email}.[/]");
+            AnsiConsole.MarkupLine($"[dim]Run [/][yellow]stats --refresh[/][dim] to retrieve stats from Codex.[/]");
+            return 1;
+        }
+
+        DisplayStats(identity, stats);
+        return 0;
+    }
+
+    private async Task<Core.Models.Identity?> GetIdentityAsync(string? identifier)
+    {
         Core.Models.Identity? identity = null;
 
-        if (string.IsNullOrEmpty(settings.Identifier))
+        if (string.IsNullOrEmpty(identifier))
         {
             // Try to get identity from active auth.json
             var activeAuth = _authJsonService.ReadActiveAuthToken();
@@ -62,30 +103,35 @@ public class StatsCommand : AsyncCommand<StatsSettings>
             if (identity == null)
             {
                 AnsiConsole.MarkupLine("[red]No active identity found. Please specify an ID or email.[/]");
-                return 1;
+                return null;
             }
         }
-        else if (int.TryParse(settings.Identifier, out int id))
+        else if (int.TryParse(identifier, out int id))
         {
             identity = await _identityRepository.GetByIdAsync(id);
         }
         else
         {
-            identity = await _identityRepository.GetByEmailAsync(settings.Identifier);
+            identity = await _identityRepository.GetByEmailAsync(identifier);
         }
 
         if (identity == null)
         {
-            AnsiConsole.MarkupLine($"[red]Identity not found:[/] {settings.Identifier}");
-            return 1;
+            AnsiConsole.MarkupLine($"[red]Identity not found:[/] {identifier}");
+            return null;
         }
 
+        return identity;
+    }
+
+    private async Task<bool> RefreshStatsAsync(Core.Models.Identity identity)
+    {
         // Get current token
         var authToken = await _tokenManagement.GetCurrentTokenAsync(identity.Id);
         if (authToken == null)
         {
             AnsiConsole.MarkupLine($"[red]No token found for identity:[/] {identity.Email}");
-            return 1;
+            return false;
         }
 
         Core.Models.UsageStats? stats = null;
@@ -93,23 +139,26 @@ public class StatsCommand : AsyncCommand<StatsSettings>
         try
         {
             await AnsiConsole.Status()
-                .StartAsync($"Retrieving usage stats for [bold]{identity.Email}[/]...", async ctx =>
+                .StartAsync($"Refreshing stats for [bold]{identity.Email}[/]...", async ctx =>
                 {
-                    ctx.Status("Launching Codex TUI...");
+                    ctx.Status("Launching Codex...");
 
-                    // Get stats from Codex TUI
+                    // Get stats from Codex
                     stats = await _codexTuiService.GetUsageStatsAsync(identity.Id, authToken);
 
-                    ctx.Status("Saving stats to database...");
+                    ctx.Status("Saving to database...");
 
                     // Save to database
                     await _usageStatsRepository.CreateAsync(stats);
                 });
+
+            AnsiConsole.MarkupLine($"[green]✓[/] Stats refreshed for {identity.Email}");
+            return true;
         }
         catch (Exception ex)
         {
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[yellow]⚠[/] Automatic stats retrieval failed:");
+            AnsiConsole.MarkupLine($"[yellow]⚠[/] Failed to refresh stats for {identity.Email}:");
             AnsiConsole.MarkupLine($"[dim]{ex.Message}[/]");
             AnsiConsole.WriteLine();
 
@@ -121,7 +170,7 @@ Run the following command to enter stats manually:
 
 Or specify an identity:
 
-    [yellow]codex-tokens stats-entry {identity.Email}[/]
+    [yellow]codex-tokens stats-entry " + identity.Email + @"[/]
 
 This will guide you through entering the values from [yellow]codex --yolo[/]."))
             {
@@ -130,16 +179,101 @@ This will guide you through entering the values from [yellow]codex --yolo[/]."))
             };
 
             AnsiConsole.Write(panel);
-            return 1;
+            return false;
         }
+    }
 
-        if (stats == null)
+    private async Task<int> ShowAllStatsAsync(bool refresh)
+    {
+        var identities = (await _identityRepository.GetAllAsync()).ToList();
+
+        if (!identities.Any())
         {
-            AnsiConsole.MarkupLine("[red]Failed to retrieve stats[/]");
-            return 1;
+            AnsiConsole.MarkupLine("[yellow]No identities found.[/]");
+            return 0;
         }
 
-        // Display stats in a nice table
+        // Refresh all if requested
+        if (refresh)
+        {
+            AnsiConsole.MarkupLine($"[cyan]Refreshing stats for {identities.Count} identities...[/]");
+            AnsiConsole.WriteLine();
+
+            foreach (var identity in identities)
+            {
+                await RefreshStatsAsync(identity);
+            }
+
+            AnsiConsole.WriteLine();
+        }
+
+        // Create consolidated table
+        var table = new Table();
+        table.Border(TableBorder.Rounded);
+        table.AddColumn(new TableColumn("[bold]ID[/]").RightAligned());
+        table.AddColumn("[bold]Email[/]");
+        table.AddColumn(new TableColumn("[bold]5h Limit[/]").RightAligned());
+        table.AddColumn(new TableColumn("[bold]7d Limit[/]").RightAligned());
+        table.AddColumn("[bold]5h Reset[/]");
+        table.AddColumn("[bold]7d Reset[/]");
+        table.AddColumn("[bold]Last Updated[/]");
+
+        // Add rows for each identity
+        foreach (var identity in identities)
+        {
+            var stats = await _usageStatsRepository.GetLatestAsync(identity.Id);
+
+            if (stats == null)
+            {
+                table.AddRow(
+                    identity.Id.ToString(),
+                    identity.Email,
+                    "[dim]N/A[/]",
+                    "[dim]N/A[/]",
+                    "[dim]N/A[/]",
+                    "[dim]N/A[/]",
+                    "[dim]Never[/]"
+                );
+            }
+            else
+            {
+                var fiveHourColor = GetPercentColor(stats.FiveHourLimitPercent);
+                var weeklyColor = GetPercentColor(stats.WeeklyLimitPercent);
+                var fiveHourReset = stats.FiveHourLimitResetTime.ToString("HH:mm");
+                var weeklyReset = stats.WeeklyLimitResetTime.ToString("HH:mm dd MMM");
+                var lastUpdated = stats.CapturedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+                table.AddRow(
+                    identity.Id.ToString(),
+                    identity.Email,
+                    $"[{fiveHourColor}]{stats.FiveHourLimitPercent}%[/]",
+                    $"[{weeklyColor}]{stats.WeeklyLimitPercent}%[/]",
+                    fiveHourReset,
+                    weeklyReset,
+                    $"[dim]{lastUpdated}[/]"
+                );
+            }
+        }
+
+        AnsiConsole.MarkupLine("[bold cyan]Usage statistics for all identities:[/]");
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(table);
+
+        return 0;
+    }
+
+    private string GetPercentColor(int percent)
+    {
+        return percent switch
+        {
+            >= 80 => "red",
+            >= 50 => "yellow",
+            _ => "green"
+        };
+    }
+
+    private void DisplayStats(Core.Models.Identity identity, Core.Models.UsageStats stats)
+    {
         var table = new Table();
         table.Border(TableBorder.Rounded);
         table.AddColumn("[bold]Metric[/]");
@@ -164,11 +298,8 @@ This will guide you through entering the values from [yellow]codex --yolo[/]."))
             $"{weeklyReset}"
         );
 
-        AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[bold]Usage statistics for {identity.Email}[/]");
         AnsiConsole.Write(table);
-
-        return 0;
     }
 
     private string CreateProgressBar(int percent)

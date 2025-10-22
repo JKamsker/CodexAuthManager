@@ -44,10 +44,27 @@
 
   Usage Examples
 
-  # Automatic retrieval (now fully working!)
-  codex-tokens stats
-  codex-tokens stats 4
-  codex-tokens stats user@example.com
+  # Show stats from database (fast, no Codex launch)
+  codex-tokens stats                    # Show active identity's stats (detailed)
+  codex-tokens stats 4                  # Show identity #4's stats (detailed)
+  codex-tokens stats user@example.com   # Show specific user's stats (detailed)
+  codex-tokens stats all                # Show all users' stats in consolidated table
+
+  # Refresh stats from Codex (launches Codex to get latest data)
+  codex-tokens stats --refresh          # Refresh and show active identity
+  codex-tokens stats 4 --refresh        # Refresh and show identity #4
+  codex-tokens stats all --refresh      # Refresh all users one by one, then show table
+
+  Table Format for "stats all":
+  ┌────┬──────────────────┬──────────┬──────────┬──────────┬──────────────┬──────────────────┐
+  │ ID │ Email            │ 5h Limit │ 7d Limit │ 5h Reset │ 7d Reset     │ Last Updated     │
+  ├────┼──────────────────┼──────────┼──────────┼──────────┼──────────────┼──────────────────┤
+  │  4 │ user@example.com │ 0%       │ 44%      │ 20:37    │ 23:36 25 Okt │ 2025-10-22 16:21 │
+  └────┴──────────────────┴──────────┴──────────┴──────────┴──────────────┴──────────────────┘
+
+  - Color-coded percentages: green (<50%), yellow (50-79%), red (≥80%)
+  - Shows "N/A" for identities without stats
+  - Last Updated shows when stats were last captured from Codex
 
   # Manual entry (backup option if automatic fails)
   codex-tokens stats-entry
