@@ -271,6 +271,54 @@ public class TokenManagementServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ImportOrUpdateTokenAsync_ShouldKeepNewestTokenCurrent_WhenOlderTokenImportedAfterwards()
+    {
+        // Arrange - start with the most recent token
+        var now = DateTime.UtcNow;
+        var newestToken = SampleData.CreateAuthToken();
+        newestToken.Tokens.AccessToken = "newest_token";
+        newestToken.LastRefresh = now;
+
+        var olderToken = SampleData.CreateAuthToken();
+        olderToken.Tokens.AccessToken = "older_token";
+        olderToken.LastRefresh = now.AddHours(-6);
+
+        await _fixture.TokenManagement.ImportOrUpdateTokenAsync(newestToken);
+
+        // Act - Import an older token for the same identity
+        var (identityId, _, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(olderToken);
+
+        // Assert - The newest token should remain the active/current version
+        var currentVersion = await _fixture.TokenVersionRepository.GetCurrentVersionAsync(identityId);
+        Assert.NotNull(currentVersion);
+        Assert.Equal("newest_token", currentVersion!.AccessToken);
+        Assert.Equal(newestToken.LastRefresh, currentVersion.LastRefresh);
+    }
+
+    [Fact]
+    public async Task ImportOrUpdateTokenAsync_ShouldIgnoreOlderTokenVersions()
+    {
+        // Arrange - Import latest token
+        var now = DateTime.UtcNow;
+        var latestToken = SampleData.CreateAuthToken();
+        latestToken.Tokens.AccessToken = "latest_token";
+        latestToken.LastRefresh = now;
+
+        var (identityId, _, _) = await _fixture.TokenManagement.ImportOrUpdateTokenAsync(latestToken);
+
+        // Act - Import a strictly older token (different combination) for the same identity
+        var olderToken = SampleData.CreateAuthToken();
+        olderToken.Tokens.AccessToken = "older_token";
+        olderToken.LastRefresh = now.AddHours(-12);
+        await _fixture.TokenManagement.ImportOrUpdateTokenAsync(olderToken);
+
+        // Assert - Only the latest token combination should be stored
+        var versions = (await _fixture.TokenVersionRepository.GetVersionsAsync(identityId)).ToList();
+        Assert.Single(versions);
+        Assert.Equal("latest_token", versions[0].AccessToken);
+    }
+
+    [Fact]
     public async Task ImportOrUpdateTokenAsync_ShouldMatchByAccountId_WhenEmailNotFound()
     {
         // Arrange - Create identity with AccountId but different email

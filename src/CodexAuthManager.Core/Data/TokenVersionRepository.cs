@@ -1,5 +1,6 @@
 using CodexAuthManager.Core.Models;
 using Microsoft.Data.Sqlite;
+using System.Globalization;
 
 namespace CodexAuthManager.Core.Data;
 
@@ -63,6 +64,36 @@ public class TokenVersionRepository : ITokenVersionRepository
             versions.Add(ReadTokenVersion(reader));
         }
         return versions;
+    }
+
+    public async Task<TokenVersion?> FindByTokenAsync(int identityId, string idToken, string accessToken, string refreshToken)
+    {
+        await using var command = _database.Connection.CreateCommand();
+        command.CommandText = @"
+            SELECT Id, IdentityId, VersionNumber, IdToken, AccessToken, RefreshToken,
+                   AccountId, OpenAiApiKey, LastRefresh, CreatedAt, IsCurrent
+            FROM TokenVersions
+            WHERE IdentityId = @identityId
+              AND IdToken = @idToken
+              AND AccessToken = @accessToken
+              AND RefreshToken = @refreshToken
+            LIMIT 1";
+
+        command.Parameters.AddWithValue("@identityId", identityId);
+        command.Parameters.AddWithValue("@idToken", idToken);
+        command.Parameters.AddWithValue("@accessToken", accessToken);
+        command.Parameters.AddWithValue("@refreshToken", refreshToken);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        return reader.Read() ? ReadTokenVersion(reader) : null;
+    }
+
+    public async Task DeleteAsync(int id)
+    {
+        await using var command = _database.Connection.CreateCommand();
+        command.CommandText = "DELETE FROM TokenVersions WHERE Id = @id";
+        command.Parameters.AddWithValue("@id", id);
+        await command.ExecuteNonQueryAsync();
     }
 
     public async Task<int> CreateAsync(TokenVersion tokenVersion)
@@ -135,8 +166,8 @@ public class TokenVersionRepository : ITokenVersionRepository
             RefreshToken = reader.GetString(5),
             AccountId = reader.GetString(6),
             OpenAiApiKey = reader.IsDBNull(7) ? null : reader.GetString(7),
-            LastRefresh = DateTime.Parse(reader.GetString(8)),
-            CreatedAt = DateTime.Parse(reader.GetString(9)),
+            LastRefresh = DateTime.Parse(reader.GetString(8), null, DateTimeStyles.RoundtripKind),
+            CreatedAt = DateTime.Parse(reader.GetString(9), null, DateTimeStyles.RoundtripKind),
             IsCurrent = reader.GetInt32(10) == 1
         };
     }

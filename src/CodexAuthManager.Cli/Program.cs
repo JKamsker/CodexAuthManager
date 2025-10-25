@@ -78,16 +78,24 @@ class Program
         });
 
         // Initialize database before running commands
+        ServiceProvider? bootstrapProvider = null;
         try
         {
-            var serviceProvider = services.BuildServiceProvider();
-            var database = serviceProvider.GetRequiredService<TokenDatabase>();
+            bootstrapProvider = services.BuildServiceProvider();
+            var database = bootstrapProvider.GetRequiredService<TokenDatabase>();
             await database.InitializeAsync();
+
+            var maintenance = bootstrapProvider.GetRequiredService<TokenMaintenanceService>();
+            await maintenance.DeduplicateAndFixCurrentVersionsAsync();
         }
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"[red]Failed to initialize database:[/] {ex.Message}");
             return 1;
+        }
+        finally
+        {
+            bootstrapProvider?.Dispose();
         }
 
         return await app.RunAsync(args);
@@ -138,6 +146,7 @@ class Program
         services.AddSingleton<JwtDecoderService>();
         services.AddSingleton<TokenManagementService>();
         services.AddSingleton<AuthJsonService>();
+        services.AddSingleton<TokenMaintenanceService>();
         services.AddSingleton<DatabaseBackupService>();
         services.AddSingleton<ICodexProcessRunner, CodexProcessRunner>();
         services.AddSingleton<CodexTuiService>();

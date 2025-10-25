@@ -1,5 +1,6 @@
 using CodexAuthManager.Core.Data;
 using CodexAuthManager.Core.Models;
+using System;
 
 namespace CodexAuthManager.Core.Services;
 
@@ -99,47 +100,99 @@ public class TokenManagementService
             }
         }
 
-        // Check if current version differs
         var currentVersion = await _tokenVersionRepository.GetCurrentVersionAsync(identity.Id);
-        bool tokensChanged = currentVersion == null ||
-                            currentVersion.IdToken != authToken.Tokens.IdToken ||
-                            currentVersion.AccessToken != authToken.Tokens.AccessToken ||
-                            currentVersion.RefreshToken != authToken.Tokens.RefreshToken;
+        bool tokensMatchCurrent = currentVersion != null &&
+                                  currentVersion.IdToken == authToken.Tokens.IdToken &&
+                                  currentVersion.AccessToken == authToken.Tokens.AccessToken &&
+                                  currentVersion.RefreshToken == authToken.Tokens.RefreshToken;
 
-        if (!tokensChanged && currentVersion != null && !identityUpdated)
+        var incomingTimestamp = DetermineTokenTimestamp(authToken, metadata);
+        var currentTimestamp = currentVersion != null
+            ? NormalizeToUtc(currentVersion.LastRefresh)
+            : DateTime.MinValue;
+
+        TokenVersion? matchingExisting = null;
+        if (!tokensMatchCurrent)
         {
-            return (identity.Id, currentVersion.Id, false);
+            matchingExisting = await _tokenVersionRepository.FindByTokenAsync(
+                identity.Id,
+                authToken.Tokens.IdToken,
+                authToken.Tokens.AccessToken,
+                authToken.Tokens.RefreshToken);
         }
 
-        // Get next version number
-        var versions = await _tokenVersionRepository.GetVersionsAsync(identity.Id);
-        int nextVersionNumber = versions.Any() ? versions.Max(v => v.VersionNumber) + 1 : 1;
+        bool isOlderThanCurrent = currentVersion != null && incomingTimestamp < currentTimestamp && !tokensMatchCurrent;
 
-        // Create new version
-        var newVersion = new TokenVersion
+        if (!tokensMatchCurrent && isOlderThanCurrent)
         {
-            IdentityId = identity.Id,
-            VersionNumber = nextVersionNumber,
-            IdToken = authToken.Tokens.IdToken,
-            AccessToken = authToken.Tokens.AccessToken,
-            RefreshToken = authToken.Tokens.RefreshToken,
-            AccountId = authToken.Tokens.AccountId,
-            OpenAiApiKey = authToken.OpenAiApiKey,
-            LastRefresh = authToken.LastRefresh,
-            CreatedAt = DateTime.UtcNow,
-            IsCurrent = false
-        };
+            if (identityUpdated)
+            {
+                identity.UpdatedAt = DateTime.UtcNow;
+                await _identityRepository.UpdateAsync(identity);
+            }
 
-        int versionId = await _tokenVersionRepository.CreateAsync(newVersion);
+            return (identity.Id, currentVersion!.Id, false);
+        }
 
-        // Set as current version
-        await _tokenVersionRepository.SetCurrentVersionAsync(identity.Id, versionId);
+        if (tokensMatchCurrent && !identityUpdated)
+        {
+            return (identity.Id, currentVersion!.Id, false);
+        }
 
-        // Update identity metadata (always update timestamp and conditionally update other fields)
-        identity.UpdatedAt = DateTime.UtcNow;
-        await _identityRepository.UpdateAsync(identity);
+        if (!tokensMatchCurrent && matchingExisting != null)
+        {
+            if (!matchingExisting.IsCurrent)
+            {
+                await _tokenVersionRepository.SetCurrentVersionAsync(identity.Id, matchingExisting.Id);
+            }
 
-        return (identity.Id, versionId, isNewIdentity);
+            identity.UpdatedAt = DateTime.UtcNow;
+            await _identityRepository.UpdateAsync(identity);
+
+            return (identity.Id, matchingExisting.Id, false);
+        }
+
+        if (!tokensMatchCurrent)
+        {
+            // Get next version number
+            var versions = await _tokenVersionRepository.GetVersionsAsync(identity.Id);
+            int nextVersionNumber = versions.Any() ? versions.Max(v => v.VersionNumber) + 1 : 1;
+
+            // Create new version
+            var newVersion = new TokenVersion
+            {
+                IdentityId = identity.Id,
+                VersionNumber = nextVersionNumber,
+                IdToken = authToken.Tokens.IdToken,
+                AccessToken = authToken.Tokens.AccessToken,
+                RefreshToken = authToken.Tokens.RefreshToken,
+                AccountId = authToken.Tokens.AccountId,
+                OpenAiApiKey = authToken.OpenAiApiKey,
+                LastRefresh = incomingTimestamp,
+                CreatedAt = DateTime.UtcNow,
+                IsCurrent = false
+            };
+
+            int versionId = await _tokenVersionRepository.CreateAsync(newVersion);
+
+            // Set as current version
+            await _tokenVersionRepository.SetCurrentVersionAsync(identity.Id, versionId);
+
+            // Update identity metadata (always update timestamp and conditionally update other fields)
+            identity.UpdatedAt = DateTime.UtcNow;
+            await _identityRepository.UpdateAsync(identity);
+
+            return (identity.Id, versionId, isNewIdentity);
+        }
+
+        // Tokens already current but metadata changed
+        if (identityUpdated)
+        {
+            identity.UpdatedAt = DateTime.UtcNow;
+            await _identityRepository.UpdateAsync(identity);
+        }
+
+        return (identity.Id, currentVersion?.Id ?? matchingExisting?.Id ?? 0, isNewIdentity);
     }
 
     /// <summary>
@@ -197,6 +250,36 @@ public class TokenManagementService
                 AccountId = version.AccountId
             },
             LastRefresh = version.LastRefresh
+        };
+    }
+
+    private static DateTime DetermineTokenTimestamp(AuthToken authToken, JwtMetadata metadata)
+    {
+        if (authToken.LastRefresh != default)
+        {
+            return NormalizeToUtc(authToken.LastRefresh);
+        }
+
+        if (metadata.IssuedAt != default)
+        {
+            return NormalizeToUtc(metadata.IssuedAt);
+        }
+
+        return DateTime.UtcNow;
+    }
+
+    private static DateTime NormalizeToUtc(DateTime value)
+    {
+        if (value == default)
+        {
+            return value;
+        }
+
+        return value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
         };
     }
 }
