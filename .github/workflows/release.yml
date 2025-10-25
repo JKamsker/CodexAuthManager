@@ -53,6 +53,21 @@ jobs:
           /p:PackageId=codex-tokens
           /p:PackageVersion=${{ steps.gitversion.outputs.semVer }}
 
+      - name: Retrieve secrets from Bitwarden
+        uses: bitwarden/sm-action@v2
+        with:
+          access_token: ${{ secrets.BW_ACCESS_TOKEN }}
+          base_url: https://vault.bitwarden.eu
+          secrets: |
+            265b2fb6-2cf0-4859-9bc8-b24c00ab4378 > NUGET_API_KEY
+
+      - name: Publish codex-tokens to NuGet.org
+        run: |
+          dotnet nuget push "artifacts/*.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
       - name: Upload NuGet artifact
         uses: actions/upload-artifact@v4
         with:
