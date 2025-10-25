@@ -37,6 +37,7 @@ public class TokenVersionRepository : ITokenVersionRepository
                    AccountId, OpenAiApiKey, LastRefresh, CreatedAt, IsCurrent
             FROM TokenVersions
             WHERE IdentityId = @identityId AND IsCurrent = 1
+            ORDER BY VersionNumber DESC, datetime(CreatedAt) DESC
             LIMIT 1";
         command.Parameters.AddWithValue("@identityId", identityId);
 
@@ -103,12 +104,13 @@ public class TokenVersionRepository : ITokenVersionRepository
                 await command.ExecuteNonQueryAsync();
             }
 
-            // Set the specified version as current
+            // Set the specified version as current (guard by identity)
             await using (var command = _database.Connection.CreateCommand())
             {
                 command.Transaction = transaction;
-                command.CommandText = "UPDATE TokenVersions SET IsCurrent = 1 WHERE Id = @id";
+                command.CommandText = "UPDATE TokenVersions SET IsCurrent = 1 WHERE Id = @id AND IdentityId = @identityId";
                 command.Parameters.AddWithValue("@id", versionId);
+                command.Parameters.AddWithValue("@identityId", identityId);
                 await command.ExecuteNonQueryAsync();
             }
 
