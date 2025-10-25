@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  build-test-pack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore CodexAuthManager.sln
+
+      - name: Build
+        run: dotnet build CodexAuthManager.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test CodexAuthManager.sln --configuration Release --no-build --verbosity normal
+
+      - name: Pack codex-tokens tool
+        run: >
+          dotnet pack src/CodexAuthManager.Cli/CodexAuthManager.Cli.csproj
+          --configuration Release
+          --no-build
+          --output ./artifacts
+          /p:PackageId=codex-tokens
+
+      - name: Upload NuGet artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-tokens-nuget
+          path: artifacts/*.nupkg
