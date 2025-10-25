@@ -48,7 +48,7 @@ jobs:
           --no-build
           --output ./artifacts
           /p:PackageId=codex-tokens
-          /p:PackageVersion=${{ steps.gitversion.outputs.nuGetVersionV2 }}
+          /p:PackageVersion=${{ steps.gitversion.outputs.semVer }}
 
       - name: Upload NuGet artifact
         uses: actions/upload-artifact@v4
