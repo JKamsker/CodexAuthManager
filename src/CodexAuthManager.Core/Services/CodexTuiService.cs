@@ -97,17 +97,48 @@ public class CodexTuiService
     {
         var now = DateTime.Now;
 
+        DateTime ParseResetTime(JsonElement scope)
+        {
+            // New format: resets_at is a Unix timestamp (seconds) when the window resets
+            if (scope.TryGetProperty("resets_at", out var resetsAtEl))
+            {
+                var epoch = resetsAtEl.ValueKind switch
+                {
+                    JsonValueKind.Number => resetsAtEl.GetInt64(),
+                    JsonValueKind.String when long.TryParse(resetsAtEl.GetString(), out var v) => v,
+                    _ => (long?)null
+                };
+                if (epoch is long ts)
+                {
+                    // Convert to local time to keep behavior consistent with previous implementation
+                    return DateTimeOffset.FromUnixTimeSeconds(ts).ToLocalTime().DateTime;
+                }
+            }
+
+            // Backward compatibility: previous format used resets_in_seconds
+            if (scope.TryGetProperty("resets_in_seconds", out var resetsInEl) && resetsInEl.ValueKind == JsonValueKind.Number)
+            {
+                return now.AddSeconds(resetsInEl.GetDouble());
+            }
+
+            // As a last resort, if window_minutes is provided but no reset indicator, estimate reset as now + window
+            if (scope.TryGetProperty("window_minutes", out var windowMinEl) && windowMinEl.ValueKind == JsonValueKind.Number)
+            {
+                return now.AddMinutes(windowMinEl.GetDouble());
+            }
+
+            throw new InvalidOperationException("Unable to determine rate limit reset time from rate_limits scope.");
+        }
+
         // Parse primary (5-hour limit)
         var primary = rateLimits.GetProperty("primary");
         var fiveHourPercent = (int)Math.Round(primary.GetProperty("used_percent").GetDouble());
-        var fiveHourResetsInSeconds = primary.GetProperty("resets_in_seconds").GetInt32();
-        var fiveHourResetTime = now.AddSeconds(fiveHourResetsInSeconds);
+        var fiveHourResetTime = ParseResetTime(primary);
 
         // Parse secondary (weekly limit)
         var secondary = rateLimits.GetProperty("secondary");
         var weeklyPercent = (int)Math.Round(secondary.GetProperty("used_percent").GetDouble());
-        var weeklyResetsInSeconds = secondary.GetProperty("resets_in_seconds").GetInt32();
-        var weeklyResetTime = now.AddSeconds(weeklyResetsInSeconds);
+        var weeklyResetTime = ParseResetTime(secondary);
 
         return new UsageStats
         {
