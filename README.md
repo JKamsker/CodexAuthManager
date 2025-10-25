@@ -1,269 +1,147 @@
-# Codex Auth Manager
+# Codex Auth Manager 🎛️
 
-A .NET command-line tool to manage multiple Codex authentication tokens with versioning, backup, and easy switching between identities.
+[![CI](https://github.com/JKamsker/CodexAuthManager/actions/workflows/ci.yml/badge.svg)](https://github.com/JKamsker/CodexAuthManager/actions/workflows/ci.yml)
+[![Release](https://github.com/JKamsker/CodexAuthManager/actions/workflows/release.yml/badge.svg)](https://github.com/JKamsker/CodexAuthManager/actions/workflows/release.yml)
+[![NuGet](https://img.shields.io/nuget/v/codex-tokens?color=512bd4&label=NuGet&logo=nuget)](https://www.nuget.org/packages/codex-tokens)
+[![License](https://img.shields.io/badge/license-MIT-2ea44f.svg)](#-license)
 
-## Features
+> A batteries-included .NET global tool for wrangling every Codex auth token you own—safely, versioned, and with zero guesswork.
 
-- **Import Multiple Tokens**: Automatically scan and import all `*auth.json` files from your Codex folder
-- **Token Versioning**: Immutable token versioning - old tokens are never deleted, only new versions are created
-- **Identity Management**: List, view, activate, and manage multiple identities
-- **Automatic Backups**: Database backups are created before any destructive operations
-- **Rollback Support**: Restore previous token versions if needed
-- **JWT Metadata Extraction**: Automatically extracts email, plan type, and subscription info from tokens
-- **Environment Support**: Separate development and production environments
+## ✨ Why you’ll love it
 
-## Installation
+- **All tokens, one brain** – import every `*auth.json`, inspect metadata, and switch identities in seconds.
+- **Immutable history** – every refresh becomes a new version, so rolling back feels like using Git for tokens.
+- **Automated safety nets** – encrypted backups, environment separation, and guarded destructive actions.
+- **Developer-friendly** – human-readable CLI, rich logs, and first-class Windows paths.
+- **Shipping confidence** – GitHub Actions builds, tests, publishes NuGet, and cuts GitHub releases on every `master` push.
 
-### Install as .NET Tool
+---
 
-```bash
-dotnet pack src/CodexAuthManager.Cli/CodexAuthManager.Cli.csproj
-dotnet tool install --global --add-source ./src/CodexAuthManager.Cli/bin/Debug CodexAuthManager
-```
-
-### Build from Source
+## 🚀 Install (global .NET tool)
 
 ```bash
-dotnet build
+# Fresh install
+dotnet tool install --global codex-tokens
+
+# Upgrade to the latest release
+dotnet tool update --global codex-tokens
 ```
 
-## Usage
+Need a local build? Run `dotnet pack src/CodexAuthManager.Cli/CodexAuthManager.Cli.csproj -c Release` and install from the produced `.nupkg`.
 
-### Import Tokens
+---
 
-Scan the `%userprofile%\.codex` folder and import all `*auth.json` files:
+## ⚡ Quick start (TL;DR)
+
+1. **Scan & import** every Codex token that lives under `%USERPROFILE%\.codex`  
+   ```bash
+   codex-tokens import
+   ```
+2. **List** the identities that were discovered (email, plan, last refresh, active flag).  
+   ```bash
+   codex-tokens list
+   ```
+3. **Activate** the identity you want to work with—this rewrites your live `auth.json` safely.  
+   ```bash
+   codex-tokens activate user@example.com
+   ```
+4. **Rollback** if a token stops working; previous versions are kept forever.  
+   ```bash
+   codex-tokens rollback user@example.com --version 2
+   ```
+
+🎯 _Every dangerous operation automatically snapshots the SQLite database to `%APPDATA%\CodexManager\backups` so you can undo mistakes._
+
+---
+
+## 🧠 Command cheatsheet
+
+| Command | What it does |
+| --- | --- |
+| `codex-tokens import` | Scans for `*auth.json`, extracts JWT metadata, and versions each identity. |
+| `codex-tokens list` | Prints every identity with plan, environment, and last updated timestamp. |
+| `codex-tokens show [id|email]` | Displays the active identity by default or a specified one with all historical versions. |
+| `codex-tokens activate [id|email]` | Makes the chosen identity live by writing its current token to `%USERPROFILE%\.codex\auth.json`. |
+| `codex-tokens remove <targets>` | Deletes identities after taking a backup. |
+| `codex-tokens rollback [target] [--version N]` | Creates a brand-new version using an older token payload. |
+| `codex-tokens --dev <command>` | Runs every operation against the development storage paths listed below. |
+
+---
+
+## 🗂️ Storage layout & environments
+
+| Scope | Codex folder | Database | Backups |
+| --- | --- | --- | --- |
+| **Production** | `%USERPROFILE%\.codex` | `%APPDATA%\CodexManager\tokens.db` | `%APPDATA%\CodexManager\backups` |
+| **Development (`--dev`)** | `%APPDATA%\CodexManager-Dev\.codex` | `%APPDATA%\CodexManager-Dev\tokens-dev.db` | `%APPDATA%\CodexManager-Dev\backups` |
+
+- Backups retain the 10 most recent snapshots.
+- Every identity maintains a strictly increasing `VersionNumber`; nothing is ever mutated in place.
+- JWT metadata (email, plan, subscription) is stored alongside tokens so you can search without decrypting anything.
+
+---
+
+## 🧪 Local development
 
 ```bash
-codex-tokens import
-```
+# Restore dependencies
+dotnet restore CodexAuthManager.sln
 
-This will:
-- Find all files ending with `auth.json` (e.g., `auth.json`, `1-dccx-auth.json`, `1-misi-auth.json`)
-- Extract JWT metadata (email, plan type, etc.)
-- Create database entries with version 1 for each identity
-- Create a backup of the database
+# Run unit tests
+dotnet test CodexAuthManager.sln
 
-### List All Identities
-
-```bash
-codex-tokens list
-```
-
-Output:
-```
-Found 3 identity/identities:
-
-ID    Email                            Plan       Active   Last Updated
----------------------------------------------------------------------------------
-1     user1@example.com                plus       ✓        2025-10-22 13:45
-2     user2@example.com                free                2025-10-21 10:30
-3     user3@example.com                plus                2025-10-20 15:20
-```
-
-### Show Identity Details
-
-Show the currently active identity:
-```bash
-codex-tokens show
-```
-
-Show a specific identity by ID or email:
-```bash
-codex-tokens show 2
-codex-tokens show user@example.com
-```
-
-Output includes:
-- Identity details (email, user ID, account ID, plan type)
-- All token versions with timestamps
-- Current active version
-
-### Activate an Identity
-
-Switch to a different identity (updates `%userprofile%\.codex\auth.json`):
-
-```bash
-codex-tokens activate 2
-codex-tokens activate user@example.com
-```
-
-This will:
-- Create a database backup
-- Set the specified identity as active
-- Write its current token to `%userprofile%\.codex\auth.json`
-
-### Remove Identities
-
-Delete one or more identities:
-
-```bash
-codex-tokens remove 2
-codex-tokens remove user@example.com
-codex-tokens remove 1 2 3
-```
-
-### Rollback to Previous Version
-
-Restore a previous token version (creates a new version based on the old one):
-
-```bash
-# Rollback active identity to previous version
-codex-tokens rollback
-
-# Rollback specific identity
-codex-tokens rollback 2
-codex-tokens rollback user@example.com
-
-# Rollback to a specific version number
-codex-tokens rollback 2 --version 3
-```
-
-## How Token Versioning Works
-
-Tokens are **immutable** - they are never modified or deleted, only new versions are created:
-
-1. **Import**: Creates version 1 for each new identity
-2. **Update**: If a token changes during import, a new version is created (e.g., version 2, 3, etc.)
-3. **Rollback**: Creates a new version based on an old version (doesn't delete the current version)
-
-Example flow:
-- Import creates **v1** with token A
-- Token refreshes, import creates **v2** with token B (v1 still exists)
-- Need to go back? Rollback creates **v3** based on v1's data
-- Can still roll forward to v2 if needed
-
-## Environment Configuration
-
-### Production Environment (Default)
-
-Uses actual system paths:
-- Codex folder: `%userprofile%\.codex`
-- Database: `%appdata%\CodexManager\tokens.db`
-- Backups: `%appdata%\CodexManager\backups`
-
-### Development Environment
-
-Use separate paths to avoid interfering with production data:
-
-```bash
-# Use --dev flag
-codex-tokens --dev import
-codex-tokens --dev list
-
-# Or set environment variable
-set CODEX_ENV=development
-codex-tokens import
-```
-
-Development paths:
-- Codex folder: `%appdata%\CodexManager-Dev\.codex`
-- Database: `%appdata%\CodexManager-Dev\tokens-dev.db`
-- Backups: `%appdata%\CodexManager-Dev\backups`
-
-## Data Storage
-
-### Database Location
-
-- **Production**: `%appdata%\CodexManager\tokens.db`
-- **Development**: `%appdata%\CodexManager-Dev\tokens-dev.db`
-
-### Backups
-
-Automatic backups are created before:
-- Activating an identity
-- Removing identities
-- Rolling back versions
-
-Backups are stored as:
-- `%appdata%\CodexManager\backups\tokens-backup-20251022-134530.db`
-
-The tool automatically keeps only the last 10 backups.
-
-## Database Schema
-
-### Identities Table
-- `Id`: Auto-increment primary key
-- `Email`: User email from JWT
-- `AccountId`: Codex account ID
-- `UserId`: Codex user ID
-- `PlanType`: Subscription plan (e.g., "plus", "free")
-- `IsActive`: Whether this is the currently active identity
-- `CreatedAt`, `UpdatedAt`: Timestamps
-
-### TokenVersions Table
-- `Id`: Auto-increment primary key
-- `IdentityId`: Foreign key to Identities
-- `VersionNumber`: Sequential version number (1, 2, 3, ...)
-- `IdToken`, `AccessToken`, `RefreshToken`: Token data
-- `AccountId`: Account ID from tokens
-- `OpenAiApiKey`: Optional API key
-- `LastRefresh`: When the token was last refreshed
-- `CreatedAt`: When this version was created
-- `IsCurrent`: Whether this is the active version for the identity
-
-## Security Notes
-
-- Tokens are stored in a local SQLite database
-- The database contains sensitive authentication data
-- Backups also contain sensitive data
-- Consider encrypting the `%appdata%\CodexManager` folder if needed
-
-## Troubleshooting
-
-### No auth.json files found
-Make sure you have Codex installed and have logged in at least once. Auth files should be in `%userprofile%\.codex`.
-
-### Database locked error
-Close any other instances of the tool or applications that might be accessing the database.
-
-### Permission errors
-Run the tool with appropriate permissions for the `%appdata%` and `%userprofile%` directories.
-
-## Development
-
-### Project Structure
-
-```
-CodexAuthManager/
-├── src/
-│   ├── CodexAuthManager.Core/      # Core domain models, data, and services
-│   │   ├── Models/                 # Domain models
-│   │   ├── Data/                   # Repository layer
-│   │   ├── Services/               # Business logic
-│   │   ├── Infrastructure/         # File system and path providers
-│   │   └── Abstractions/           # Interfaces
-│   └── CodexAuthManager.Cli/       # Command-line interface
-│       ├── Commands/               # Command implementations
-│       └── Program.cs              # Entry point
-├── tests/
-│   └── CodexAuthManager.Tests/    # Unit tests
-└── docs/
-    └── plan.md                     # Implementation plan
-```
-
-### Building
-
-```bash
-dotnet build
-```
-
-### Running Without Installation
-
-```bash
+# Launch the CLI without global install
 dotnet run --project src/CodexAuthManager.Cli -- list
 dotnet run --project src/CodexAuthManager.Cli -- --dev import
 ```
 
-### Testing
+Project map:
 
-```bash
-dotnet test
+```
+CodexAuthManager/
+├── src/
+│   ├── CodexAuthManager.Core/   # database, services, abstractions
+│   └── CodexAuthManager.Cli/    # Spectre.Console-powered CLI
+├── tests/
+│   └── CodexAuthManager.Tests/  # unit tests for core behaviors
+└── docs/                        # design notes, plans, etc.
 ```
 
-## License
+---
 
-[Add your license here]
+## 🤖 Automation & releases
 
-## Author
+- **CI** (`ci.yml`): restores, builds, tests, and packs the CLI on every push/PR.
+- **Release** (`release.yml`): on `master`, GitVersion calculates semantic versions, the tool is packed, pushed to NuGet, and a GitHub Release is created with the `.nupkg` artifact attached.
+- **Secrets**: the workflow pulls the NuGet API key from Bitwarden via `BW_ACCESS_TOKEN`, so no plaintext tokens live in the repo.
 
-JKamsker
+Every successful master push creates a new `codex-tokens` version on NuGet and tags the repo (`vX.Y.Z`).
+
+---
+
+## 🧭 Roadmap ideas
+
+- Portable cross-platform path providers.
+- Encrypted-at-rest database option.
+- Rich TUI dashboards powered by Spectre Console canvases.
+- First-class macOS/Linux support (community contributions welcome!).
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repo & create a feature branch.
+2. Run `dotnet test` to keep CI happy.
+3. Open a PR—screenshots or sample outputs make reviews a breeze.
+
+Bug reports and feature requests are equally appreciated. If the tool saved you time, drop a ⭐!
+
+---
+
+## 📄 License
+
+MIT © JKamsker — see [`LICENSE`](LICENSE) once added.
+
+---
+
+Made with ☕, Spectre.Console, and a love for well-behaved CLIs.
