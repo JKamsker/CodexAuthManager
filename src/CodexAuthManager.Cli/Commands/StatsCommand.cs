@@ -134,7 +134,7 @@ public class StatsCommand : AsyncCommand<StatsSettings>
             return false;
         }
 
-        Core.Models.UsageStats? stats = null;
+        CodexStatsResult? statsResult = null;
 
         try
         {
@@ -144,12 +144,18 @@ public class StatsCommand : AsyncCommand<StatsSettings>
                     ctx.Status("Launching Codex...");
 
                     // Get stats from Codex
-                    stats = await _codexTuiService.GetUsageStatsAsync(identity.Id, authToken);
+                    statsResult = await _codexTuiService.GetUsageStatsAsync(identity.Id, authToken);
 
                     ctx.Status("Saving to database...");
 
                     // Save to database
-                    await _usageStatsRepository.CreateAsync(stats);
+                    await _usageStatsRepository.CreateAsync(statsResult.UsageStats);
+
+                    ctx.Status("Importing refreshed auth.json...");
+
+                    // Codex may refresh tokens while fetching stats, so keep the database in sync
+                    var latestAuthToken = statsResult.UpdatedAuthToken ?? authToken;
+                    await _tokenManagement.ImportOrUpdateTokenAsync(latestAuthToken);
                 });
 
             AnsiConsole.MarkupLine($"[green]✓[/] Stats refreshed for {identity.Email}");

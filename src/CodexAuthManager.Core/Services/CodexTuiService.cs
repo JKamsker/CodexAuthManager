@@ -28,8 +28,9 @@ public class CodexTuiService
 
     /// <summary>
     /// Retrieves usage stats by launching Codex and parsing the session history file
+    /// while also returning the post-run auth.json contents (Codex may refresh tokens).
     /// </summary>
-    public async Task<UsageStats> GetUsageStatsAsync(int identityId, AuthToken authToken)
+    public async Task<CodexStatsResult> GetUsageStatsAsync(int identityId, AuthToken authToken)
     {
         // Write the auth token to the active auth.json temporarily
         var originalAuthJson = _authJsonService.ReadActiveAuthToken();
@@ -40,8 +41,12 @@ public class CodexTuiService
             // Launch codex exec to generate a session file
             var sessionContent = await _processRunner.RunCodexWithStatusAsync();
 
+            // Capture any token updates Codex might have written
+            var refreshedAuthToken = _authJsonService.ReadActiveAuthToken();
+
             // Parse the session file content
-            return ParseUsageStats(sessionContent, identityId);
+            var stats = ParseUsageStats(sessionContent, identityId);
+            return new CodexStatsResult(stats, refreshedAuthToken);
         }
         finally
         {
@@ -151,3 +156,5 @@ public class CodexTuiService
         };
     }
 }
+
+public sealed record CodexStatsResult(UsageStats UsageStats, AuthToken? UpdatedAuthToken);
